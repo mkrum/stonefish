@@ -169,6 +169,13 @@ function tokenize_board(b::Board)
             end
         end
     end
+
+    if sidetomove(b) == WHITE::PieceColor
+        out_str *= "w,"
+    else
+        out_str *= "b,"
+    end
+
     return out_str
 end
 
