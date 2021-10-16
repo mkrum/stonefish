@@ -8,8 +8,10 @@ using Chess.PGN
 
 
 """
-Fills the "games" list in our redis server with the list of raw pgn games.
-These will be parsed into the unique FEN board states by the fen_workers. 
+    populate_fen_queue(path::String)
+
+Fills the "games" list in our redis server with the list of raw pgn games
+stored in `path`. 
 """
 function populate_fen_queue(path::String)
     conn = RedisConnection()
@@ -23,21 +25,29 @@ function populate_fen_queue(path::String)
 end
 
 """
-Takes all the unique boards found in the FEN step and loads them into a job
-queue called "boards"
+    populate_stockfish_queue()
+
+Takes all the unique boards stored as keys in the DB and put them into a list
+in the DB called "boards".
 """
 function populate_stockfish_queue()
     conn = RedisConnection()
     data = collect(keys(conn, "*"))
 
+    # chunk these operations to avoid timeout
     for chunk in Iterators.partition(data, Int(1e6))
+        # add them to the "boards list"
         lpush(conn, :boards, Vector{String}(chunk))
+        # remove them as a key->count pair
         del(conn, Vector{String}(chunk))
     end
 end
 
 """
-Converts the raw PGN game into a list of FEN boards
+    parse_game_string(game_string::String)::Vector{String}
+
+Converts the raw PGN game `game_string` into a list of FEN boards also
+represented as strings.
 """
 function parse_game_string(game_string::String)::Vector{String}
     game = gamefromstring(game_string)
@@ -49,21 +59,31 @@ function parse_game_string(game_string::String)::Vector{String}
 end
 
 """
-Pops a chunk of data from a list stored on our redis server
+    pop_chunk_from_list(conn::RedisConnection, list::Symbol,
+    chunk_size::Int)::Vector{String}
+
+Pops a chunk of data of size `chunk_size` from a list named `list` stored on
+our redis server we are connected to with `conn`.
 """
 function pop_chunk_from_list(
     conn::RedisConnection,
     list::Symbol,
     chunk_size::Int,
 )::Vector{String}
+
     pipeline = open_pipeline(conn)
+    # Gets values a chunk_sized subset of our list
     lrange(pipeline, list, 0, (chunk_size - 1))
+    # Removes that same portion
     ltrim(pipeline, list, chunk_size, -1)
+
     data = read_pipeline(pipeline)[1]
     return data
 end
 
 """
+    fen_worker(chunk::Int = 1000)
+
 Continually pops a batch of data from "games", gets all of their unique boards,
 and then stores them back into the database as their fen representation.
 """
@@ -106,7 +126,13 @@ function fen_worker(chunk::Int = 1000)
 end
 
 """
-Returns the bestmove found by the engine for this board state
+    get_move(engine::Engine, fen_board::String)::String
+
+Returns the bestmove found by the engine for this board state. This is using
+Stockfish with a search depth of 15. According to
+http://web.ist.utl.pt/diogo.ferreira/papers/ferreira13impact.pdf, this should
+correspond to an ELO of about 2563. Picked this to balance chess performance
+and speed. These seem to clock in anywhere between [.01, .3].
 """
 function get_move(engine::Engine, fen_board::String)::String
     board = fromfen(fen_board)
@@ -116,6 +142,8 @@ function get_move(engine::Engine, fen_board::String)::String
 end
 
 """
+    stockfish_worker(chunk_size::Int = 100)
+
 Worker process, gets pops chunks of boards from the redis server, runs them
 through the engine, and then stores the board and the move as a key value pair
 """
@@ -131,6 +159,7 @@ function stockfish_worker(chunk_size::Int = 100)
     while true
         boards = pop_chunk_from_list(conn, :boards, chunk_size)
 
+        # No more data left
         if length(boards) == 0
             println(n)
             return
@@ -141,6 +170,7 @@ function stockfish_worker(chunk_size::Int = 100)
             set(pipeline, b, move)
 
             n += 1
+            # Log process every 100 boards
             if n % 100 == 0
                 println(n)
             end
@@ -153,7 +183,9 @@ function stockfish_worker(chunk_size::Int = 100)
 end
 
 """
-Tokenize board
+    tokenize_board(b::Board)
+
+Converts the board, `b` into a csv-like token representation.
 """
 function tokenize_board(b::Board)
     out_str = ""
@@ -180,14 +212,22 @@ function tokenize_board(b::Board)
 end
 
 """
-Tokenize move
+    tokenize_move(m::Move)
+
+Converts the move, `m` into a csv-like token representation.
 """
 function tokenize_move(m::Move)
-    return tostring(from(m)) * "," * tostring(to(m)) * (ispromotion(m) ? tochar(promotion(m)) : "")
+    return tostring(from(m)) *
+           "," *
+           tostring(to(m)) *
+           (ispromotion(m) ? tochar(promotion(m)) : "")
 end
 
 """
-Converts the key value pairs 
+    to_dataset(path::String)
+
+Converts the key value board move pairs stored in our DB into a text file
+format saved at `path` to use as a dataset.
 """
 function to_dataset(path::String)
     conn = RedisConnection()
@@ -198,12 +238,17 @@ function to_dataset(path::String)
 
     # remove our two job queues, just in case
     boards = collect(filter(x -> (x != "boards") & (x != "games"), boards))
-    moves = mget(conn, boards)
+
+    moves = []
+    for board_chunk ∈ Iterators.partition(boards, Int(1e6))
+        new_moves = mget(conn, Vector{String}(board_chunk))
+        moves = [moves; new_moves]
+    end
 
     io = open(path, "w")
 
     for (board, move) in zip(boards, moves)
-        board = fromfen(board) 
+        board = fromfen(board)
         move = movefromstring(move)
         rep = tokenize_board(board) * tokenize_move(move) * "\n"
         write(io, rep)
