@@ -1,5 +1,6 @@
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 Chess = "717200cc-f167-4fd3-b4bf-b5e480529844"
+JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Redis = "0cf705f9-a9e2-50d1-a699-2b372a39b750"
