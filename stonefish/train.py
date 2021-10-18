@@ -12,11 +12,15 @@ from torch.utils.data import DataLoader
 
 from stonefish.model import Model
 from stonefish.dataset import TokenizedChess
+from stonefish.eval import eval_model
 from constants import MOVE_TOKENS, BOARD_TOKENS
 
 def main(log_file_path:str, load_model, load_opt):
-    data = TokenizedChess("data.csv")
-    dataloader = DataLoader(data, batch_size=256, drop_last=True)
+
+    data = TokenizedChess("train.csv")
+    test_data = TokenizedChess("test.csv")
+
+    dataloader = DataLoader(data, batch_size=256, drop_last=True, shuffle=True)
     loss_fn = nn.CrossEntropyLoss()
 
     device = torch.device("cuda")
@@ -31,9 +35,14 @@ def main(log_file_path:str, load_model, load_opt):
 
     log_file = open(log_file_path, "w")
 
-    losses = deque(maxlen=100)
+    losses = deque(maxlen=1000)
 
     for epoch in range(100):
+
+        acc = eval_model(model, test_data)
+        print(f'({epoch - 1}) Acc: {round(acc, 2)}')
+        log_file.write(f"TEST {epoch-1} {time.time()} {acc}\n")
+
         for (batch_idx, (s, a)) in enumerate(dataloader):
             s = s.to(device)
             labels = torch.flatten(a).to(device)
@@ -47,21 +56,17 @@ def main(log_file_path:str, load_model, load_opt):
     
             loss = loss.item()
             losses.append(loss)
-    
-            acc = None
-            if batch_idx % 100 == 0:
-                infer = model.inference(s)
-                acc = torch.mean((infer.flatten() == labels).float()).item()
-                print(f'({epoch}/{batch_idx}) Loss (Avg): {np.mean(losses)} Acc: {acc}')
+            
+            if batch_idx > 0 and batch_idx % 100 == 0:
+                print(f'({epoch}/{batch_idx}) Loss (Avg): {np.mean(losses)}')
 
-            if batch_idx % 1000 == 0:
-                torch.save(model.state_dict(), "model.pth")
-                torch.save(opt.state_dict(), "opt.pth")
-    
-            log_file.write(f"{epoch} {batch_idx} {time.time()} {loss} {acc}\n")
+            log_file.write(f"TRAIN {epoch} {batch_idx} {time.time()} {loss}\n")
 
         torch.save(model.state_dict(), f"model_{epoch}.pth")
-        torch.save(opt.state_dict(), f"opt_{epoch}.pth")
+        torch.save(opt.state_dict(), f"opt.pth")
+
+    acc = eval_model(model, test_data)
+    print(f'({epoch}) Acc: {round(acc, 2)}')
 
 
 if __name__ == '__main__':
