@@ -16,42 +16,57 @@ from constants import MOVE_TOKENS, BOARD_TOKENS
 
 from rich.progress import track
 
-def eval_model(model, data):
+def eval_model(model, data, batch_size=1024, max_batch=20):
 
-    dataloader = DataLoader(data, batch_size=1024, drop_last=True, shuffle=True)
+    loss_fn = nn.CrossEntropyLoss()
+
+    dataloader = DataLoader(data, batch_size=batch_size, drop_last=True, shuffle=True)
 
     correct = 0.0
     total = 0.0
-    for (batch_idx, (s, a)) in track(enumerate(dataloader), "Testing...", total=20):
+    losses = []
+    for (batch_idx, (s, a)) in track(enumerate(dataloader), "Testing...", total=max_batch):
         infer = model.inference(s)
+        infer = torch.flatten(infer)
         labels = torch.flatten(a).to(infer.device)
         
-        correct += torch.sum((infer.flatten() == labels)).float()
-        total += (2.0 * s.shape[0])
+        correct += torch.sum((infer == labels).float())
+        total += infer.shape[0]
 
-        if batch_idx == 20:
+        with torch.no_grad():
+            p = model(s, a)
+            p = p.view(-1, len(MOVE_TOKENS))
+            loss = loss_fn(p, labels)
+
+        losses.append(loss.item())
+
+        if batch_idx == max_batch:
             break
+    
+    acc = correct.item() / total
+    m_loss = np.mean(losses)
+    return acc, m_loss
 
-    return correct.item() / total
+def main(dataset, load_model):
 
-def main(load_model):
-
-    data = TokenizedChess("test.csv")
+    data = TokenizedChess(dataset)
 
     device = torch.device("cuda")
     model = Model(device, 512)
     model = model.to(model.device)
 
-    model.load_state_dict(torch.load(load_model))
+    print(model.load_state_dict(torch.load(load_model)))
 
-    acc = eval_model(model, data)
+    acc, m_loss = eval_model(model, data)
     print(acc)
+    print(m_loss)
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("dataset")
     parser.add_argument("load_model")
     args = parser.parse_args()
     
-    main(args.load_model)
+    main(args.dataset, args.load_model)

@@ -1,6 +1,8 @@
 """
 Base Transformer model
 """
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,11 +30,14 @@ class Model(nn.Module):
         self.move_embed = nn.Embedding(len(MOVE_TOKENS), emb_dim)
         
         # 65 -> number of tokens in the input sequence
-        self.pos_encoding = nn.Parameter(torch.zeros(65, emb_dim))
+        self.pos_encoding = nn.Parameter(torch.rand(65, emb_dim))
         self.start_token = nn.Parameter(torch.zeros(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
             batch_first=True,
+            d_model=emb_dim,
+            num_encoder_layers=15,
+            num_decoder_layers=15,
         )
 
         self.to_dist = nn.Sequential(nn.Linear(emb_dim, len(MOVE_TOKENS)))
@@ -59,7 +64,7 @@ class Model(nn.Module):
         return out
 
     def forward(self, state, action):
-        start_token = self._get_start_token(action.shape[0])
+        start_token = self._get_start_token(state.shape[0])
 
         pos_embed_state = self._state_embed(state)
         tgt_embed = self._action_embed(action, start_token)

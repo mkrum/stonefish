@@ -24,7 +24,7 @@ def main(log_file_path:str, load_model, load_opt):
     loss_fn = nn.CrossEntropyLoss()
 
     device = torch.device("cuda")
-    model = Model(device, 512)
+    model = Model(device, 128)
     model = model.to(model.device)
     if load_model:
         model.load_state_dict(torch.load(load_model))
@@ -39,8 +39,8 @@ def main(log_file_path:str, load_model, load_opt):
 
     for epoch in range(100):
 
-        acc = eval_model(model, test_data)
-        print(f'({epoch - 1}) Acc: {round(acc, 2)}')
+        acc, loss = eval_model(model, test_data)
+        print(f'({epoch - 1}) Acc: {round(acc, 2)} Test Loss: {loss}')
         log_file.write(f"TEST {epoch-1} {time.time()} {acc}\n")
 
         for (batch_idx, (s, a)) in enumerate(dataloader):
