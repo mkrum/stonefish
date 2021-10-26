@@ -30,17 +30,21 @@ class Model(nn.Module):
         self.move_embed = nn.Embedding(len(MOVE_TOKENS), emb_dim)
         
         # 65 -> number of tokens in the input sequence
-        self.pos_encoding = nn.Parameter(torch.rand(65, emb_dim))
+        self.pos_encoding = nn.Parameter(torch.zeros(65, emb_dim))
         self.start_token = nn.Parameter(torch.zeros(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
             batch_first=True,
             d_model=emb_dim,
-            num_encoder_layers=15,
-            num_decoder_layers=15,
+            num_encoder_layers=6,
+            num_decoder_layers=6,
         )
 
-        self.to_dist = nn.Sequential(nn.Linear(emb_dim, len(MOVE_TOKENS)))
+        self.to_dist = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim),
+            nn.ReLU(),
+            nn.Linear(emb_dim, len(MOVE_TOKENS))
+        )
 
     def _state_embed(self, state):
         state = state.to(self.device)
