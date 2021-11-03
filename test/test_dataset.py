@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from stonefish.dataset import ChessData
 
 def test_dataset():
-    dataset = ChessData('test.csv')
+    dataset = ChessData('test/sample.csv')
     board_tensor, move_tensor = dataset[0]
     
     # Check the type
@@ -16,8 +16,8 @@ def test_dataset():
     assert move_tensor.shape == torch.Size([2])
 
 def test_in_dataloader():
-    dataset = ChessData('test.csv')
-    dataloader = DataLoader(dataset, batch_size=16)
+    dataset = ChessData('test/sample.csv')
+    dataloader = DataLoader(dataset, batch_size=8)
     board_tensor, move_tensor = next(iter(dataloader))
 
     # Check the type
@@ -25,5 +25,5 @@ def test_in_dataloader():
     assert isinstance(move_tensor, torch.LongTensor) 
 
     # Check the shape
-    assert board_tensor.shape == torch.Size([16, 74])
-    assert move_tensor.shape == torch.Size([16, 2])
+    assert board_tensor.shape == torch.Size([8, 74])
+    assert move_tensor.shape == torch.Size([8, 2])
