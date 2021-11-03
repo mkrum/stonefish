@@ -1,4 +1,3 @@
-
 import torch
 import chess
 import atexit
@@ -12,6 +11,7 @@ from dataclasses import dataclass, field
 from stonefish.model import Model
 from stonefish.dataset import board_to_tensor, tensor_to_move
 
+
 @dataclass
 class Stockfish:
     """
@@ -20,7 +20,7 @@ class Stockfish:
 
     depth: int
     _engine: None = None
-    
+
     def __post_init__(self):
         self._engine = chess.engine.SimpleEngine.popen_uci("stockfish")
 
@@ -31,6 +31,7 @@ class Stockfish:
     def quit(self):
         self._engine.quit()
 
+
 @dataclass
 class ModelEngine:
     """
@@ -38,10 +39,11 @@ class ModelEngine:
     """
 
     path: str
+    device: str
     _model: None = None
-    
+
     def __post_init__(self):
-        device = torch.device("cuda")
+        device = torch.device(self.device)
         model = Model(device, 128)
         model = model.to(model.device)
         model.load_state_dict(torch.load(self.path))
@@ -64,9 +66,10 @@ class ModelEngine:
     def quit(self):
         self._engine.quit()
 
+
 def run_game(white_engine, black_engine):
     board = chess.Board()
-    
+
     while not board.is_game_over():
         if board.turn == chess.WHITE:
             move = white_engine(board)
@@ -81,9 +84,10 @@ def run_game(white_engine, black_engine):
     if outcome.winner or outcome.winner == None:
         print(chess.pgn.Game().from_board(board))
     if outcome.winner != None:
-        return (int(outcome.winner), int( not outcome.winner))
+        return (int(outcome.winner), int(not outcome.winner))
     else:
         return (0.5, 0.5)
+
 
 def get_board_reward_white(board):
     outcome = board.outcome()
@@ -94,8 +98,8 @@ def get_board_reward_white(board):
     else:
         return -1
 
-class _Env:
 
+class _Env:
     def __init__(self):
         self.eng = Stockfish(1)
         self.reset()
@@ -126,7 +130,7 @@ class _Env:
                 done = True
                 reward = get_board_reward_white(self.board)
                 self.board = chess.Board()
-        
+
         board_tensor = board_to_tensor(self.board).unsqueeze(0)
         return board_tensor, torch.BoolTensor([done]), torch.FloatTensor([reward])
 
@@ -134,6 +138,7 @@ class _Env:
         self.board = chess.Board()
         board_tensor = board_to_tensor(self.board).unsqueeze(0)
         return board_tensor
+
 
 @dataclass(frozen=True)
 class RolloutTensor:
@@ -172,7 +177,7 @@ class RolloutTensor:
 
         if self.is_empty():
             return other
-        
+
         new_state = torch.cat((self.state, other.state), 0)
         new_action = torch.cat((self.action, other.action), 0)
         new_reward = torch.cat((self.reward, other.reward), 0)
@@ -193,13 +198,11 @@ class RolloutTensor:
         new_done = self.done.to(device)
         return RolloutTensor(new_state, new_action, new_reward, new_done)
 
-#device = torch.device("cuda")
-#model = Model(device, 128)
-#model = model.to(model.device)
-#model.load_state_dict(torch.load("size_12_128/model_23.pth"))
-model = ModelEngine("unknown/model_19.pth")
 
-import stonefish.test_utils as ut
+import tqdm
+import stonefish.utils as ut
+from stonefish.constants import *
+
 eng = Stockfish(14)
 
 total = 500
@@ -207,8 +210,6 @@ total = 500
 is_legal = 0.0
 matches = 0.0
 
-import tqdm
-from stonefish.constants import *
 for _ in tqdm.tqdm(range(total)):
     board = ut.randomize_board()
     eng_move = eng(board)
@@ -217,7 +218,7 @@ for _ in tqdm.tqdm(range(total)):
         move = chess.Move.from_uci(move_str)
     except:
         continue
-    model_moves = [move] #[model(board) for _ in range(1)]
+    model_moves = [move]  # [model(board) for _ in range(1)]
 
     if eng_move in model_moves:
         matches += 1.0
@@ -228,28 +229,3 @@ print(matches / total)
 print(is_legal / total)
 
 eng.quit()
-
-
-
-#env = _Env()
-#state = env.reset()
-#done = False
-#rt = RolloutTensor.empty()
-#while not done:
-#    action = model.sample(state)
-#    print(action)
-#    next_state, done, reward = env.step(action[0])
-#    rt = rt.add(state, action, reward, done)
-#    state = next_state
-#
-#rt.decay_(0.99)
-#rt = rt.to(device)
-#print(rt.state.unsqueeze(1).shape)
-#print(rt.action.unsqueeze(1).shape)
-#log_probs = model(rt.state.squeeze(1), rt.action.squeeze(1).long())
-#print(log_probs.shape)
-#log_probs = torch.gather(log_probs, 2, rt.action.squeeze(1).unsqueeze(-1).long())
-#log_probs = torch.sum(log_probs, 1)
-#print(log_probs.shape)
-#loss = -1 * torch.mean(rt.reward * log_probs)
-#print(loss)

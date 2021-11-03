@@ -10,7 +10,8 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.distributions.categorical import Categorical
 
-from constants import MOVE_TOKENS, BOARD_TOKENS
+from stonefish.rep import MoveToken, BoardToken, BoardRep, MoveRep
+
 
 class Model(nn.Module):
     """
@@ -26,24 +27,23 @@ class Model(nn.Module):
         super().__init__()
         self.device = device
 
-        self.board_embed = nn.Embedding(len(BOARD_TOKENS), emb_dim)
-        self.move_embed = nn.Embedding(len(MOVE_TOKENS), emb_dim)
-        
-        # 65 -> number of tokens in the input sequence
-        self.pos_encoding = nn.Parameter(torch.zeros(65, emb_dim))
+        self.board_embed = nn.Embedding(BoardToken.size(), emb_dim)
+        self.move_embed = nn.Embedding(MoveToken.size(), emb_dim)
+
+        self.pos_encoding = nn.Parameter(torch.zeros(BoardRep.length, emb_dim))
         self.start_token = nn.Parameter(torch.zeros(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
             batch_first=True,
             d_model=emb_dim,
-            num_encoder_layers=6,
-            num_decoder_layers=6,
+            num_encoder_layers=1,
+            num_decoder_layers=1,
         )
 
         self.to_dist = nn.Sequential(
-            nn.Linear(emb_dim, emb_dim),
-            nn.ReLU(),
-            nn.Linear(emb_dim, len(MOVE_TOKENS))
+            nn.Linear(emb_dim, emb_dim), 
+            nn.ReLU(), 
+            nn.Linear(emb_dim, MoveToken.size())
         )
 
     def _state_embed(self, state):
@@ -63,7 +63,9 @@ class Model(nn.Module):
         return repeat_token.to(self.device)
 
     def _transformer_pass(self, src, tgt):
-        tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(self.device)
+        tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(
+            self.device
+        )
         out = self.transformer(src, tgt, tgt_mask=tgt_mask)
         return out
 
@@ -95,17 +97,15 @@ class Model(nn.Module):
 
         return tokens[:, 1:]
 
-    @torch.no_grad() 
+    @torch.no_grad()
     def inference(self, state):
-
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
 
         return self._inference(state, max_action_sel)
 
-    @torch.no_grad() 
+    @torch.no_grad()
     def sample(self, state):
-
         def sample_action_sel(logits):
             return Categorical(logits=logits).sample().view(-1, 1)
 

@@ -15,6 +15,7 @@ from torch.distributions.categorical import Categorical
 
 from constants import MOVE_TOKENS, BOARD_TOKENS, BTOKEN_ID, MTOKEN_ID
 
+
 class TokenizedChess(Dataset):
     def __init__(self, path):
         super().__init__()
@@ -67,7 +68,7 @@ class Model(nn.Module):
         logits = self.to_dist(out)
         return logits
 
-    @torch.no_grad() 
+    @torch.no_grad()
     def inference(self, state):
         state = state.to(self.device)
         embed_state = self.board_embed(state)
@@ -77,7 +78,9 @@ class Model(nn.Module):
         tokens = torch.zeros((state.shape[0], 1)).to(self.device)
 
         for i in range(2):
-            tgt_mask = self.transformer.generate_square_subsequent_mask(i + 1).to(self.device)
+            tgt_mask = self.transformer.generate_square_subsequent_mask(i + 1).to(
+                self.device
+            )
 
             out = self.transformer(pos_embed_state, decode, tgt_mask=tgt_mask)
             logits = self.to_dist(out)[:, -1, :]
@@ -88,7 +91,8 @@ class Model(nn.Module):
 
         return tokens[:, 1:]
 
-def main(log_file_path:str, load_model, load_opt):
+
+def main(log_file_path: str, load_model, load_opt):
     data = TokenizedChess("data.csv")
     dataloader = DataLoader(data, batch_size=256, drop_last=True)
     loss_fn = nn.CrossEntropyLoss()
@@ -111,45 +115,44 @@ def main(log_file_path:str, load_model, load_opt):
         for (batch_idx, (s, a)) in enumerate(dataloader):
             s = s.to(device)
             labels = torch.flatten(a).to(device)
-        
+
             opt.zero_grad()
             p = model(s, a)
             p = p.view(-1, len(MOVE_TOKENS))
             loss = loss_fn(p, labels)
             loss.backward()
             opt.step()
-    
+
             loss = loss.item()
             losses.append(loss)
-    
+
             acc = None
             if batch_idx % 100 == 0:
                 infer = model.inference(s)
                 acc = torch.mean((infer.flatten() == labels).float()).item()
-                print(f'({epoch}/{batch_idx}) Loss (Avg): {np.mean(losses)} Acc: {acc}')
+                print(f"({epoch}/{batch_idx}) Loss (Avg): {np.mean(losses)} Acc: {acc}")
 
             if batch_idx % 1000 == 0:
                 torch.save(model.state_dict(), "model.pth")
                 torch.save(opt.state_dict(), "opt.pth")
-    
+
             log_file.write(f"{epoch} {batch_idx} {time.time()} {loss} {acc}\n")
 
         torch.save(model.state_dict(), f"model_{epoch}.pth")
         torch.save(opt.state_dict(), f"opt_{epoch}.pth")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("log_file")
     parser.add_argument("--load_model")
     parser.add_argument("--load_opt")
     args = parser.parse_args()
-    
+
     if os.path.exists(args.log_file):
         res = input(f"File {args.log_file} exists. Overwrite? (Y/n) ")
         go_ahead = res == "" or res.lower() == "y"
 
     if not os.path.exists(args.log_file) or go_ahead:
         main(args.log_file, args.load_model, args.load_opt)
-

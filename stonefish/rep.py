@@ -86,6 +86,10 @@ class EnumRep:
     def __int__(self) -> int:
         return self.to_int()
 
+    @classmethod
+    def size(cls):
+        return len(cls._int_to_str.keys())
+
 
 class ListEnum:
     """
@@ -153,16 +157,16 @@ class TupleEnum(ListEnum):
     be a specific size. Only supports single type tuples.
     """
 
-    size = None
+    length = None
     token_type = None
 
     def __init__(self, list_of_values: List[EnumRep]):
-        assert len(list_of_values) == self.size
+        assert len(list_of_values) == self.length
         super().__init__(list_of_values)
 
     @classmethod
     def sample(cls):
-        return cls([cls.token_type.sample() for _ in range(cls.size)])
+        return cls([cls.token_type.sample() for _ in range(cls.length)])
 
 
 class BoardToken(EnumRep):
@@ -274,21 +278,23 @@ class MoveRep(TupleEnum):
     Move.from_uci('e2e4')
     """
 
-    size = 2
+    length = 2
     token_type = MoveToken
 
     def __str__(self):
         return self._values[0].to_str() + self._values[1].to_str()
 
     @classmethod
+    def from_str(cls, str_value: str):
+        # I think this is valid? Might be missing some weird edge case
+        from_str = cls.token_type.from_str(str_value[:2])
+        to_str = cls.token_type.from_str(str_value[2:])
+        return cls([from_str, to_str])
+
+    @classmethod
     def from_uci(cls, uci_value):
         str_value = str(uci_value)
-
-        # I think this is valid? Might be missing some weird edge case
-        from_str = token_type.from_str(str_value[:2])
-        to_str = token_type.from_str(str_value[3:])
-
-        return cls(from_str, to_str)
+        return cls.from_str(str_value)
 
     def to_uci(self):
         """
@@ -359,7 +365,7 @@ class BoardRep(TupleEnum):
     'r1bq1bnr/p1p2pp1/3kp1Np/1Q1p4/1nP5/8/PP1PPPPP/RNB1KB1R w KQ - 3 9'
     """
 
-    size = 74
+    length = 74
     token_type = BoardToken
 
     @classmethod
@@ -413,7 +419,7 @@ class BoardRep(TupleEnum):
         builder += list(fullmove_str)
 
         # Make sure it is a fixed size
-        assert len(builder) == cls.size
+        assert len(builder) == cls.length
         return cls(list(map(cls.token_type.from_str, builder)))
 
     def to_board(self) -> chess.Board:
