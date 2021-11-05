@@ -6,8 +6,8 @@ from torch.utils.data import Dataset
 
 from stonefish.rep import BoardRep, MoveRep
 
-class ChessData(Dataset):
 
+class ChessData(Dataset):
     def __init__(self, path):
         super().__init__()
 
