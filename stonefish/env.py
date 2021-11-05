@@ -9,7 +9,7 @@ import numpy as np
 from dataclasses import dataclass, field
 
 from stonefish.model import Model
-from stonefish.dataset import board_to_tensor, tensor_to_move
+from stonefish.rep import BoardRep, MoveRep
 
 
 @dataclass
@@ -46,28 +46,28 @@ class ModelEngine:
         device = torch.device(self.device)
         model = Model(device, 128)
         model = model.to(model.device)
-        model.load_state_dict(torch.load(self.path))
+        model.load_state_dict(torch.load(self.path, map_location=device))
         self._model = model
 
     def __call__(self, board):
-        tensor = board_to_tensor(board)
+        tensor = BoardRep.from_board(board).to_tensor()
         tensor = tensor.unsqueeze(0)
         move = self._model.inference(tensor)
-        move = tensor_to_move(move[0])
+        move = MoveRep.from_tensor(move[0]).to_uci()
         return move
 
     def sample(self, board):
-        tensor = board_to_tensor(board)
+        tensor = BoardRep.from_board(board).to_tensor()
         tensor = tensor.unsqueeze(0)
         move = self._model.sample(tensor)
-        move = tensor_to_move(move[0])
+        move = MoveRep.from_tensor(move[0]).to_uci()
         return move
 
     def quit(self):
         self._engine.quit()
 
 
-def run_game(white_engine, black_engine):
+def rollout(white_engine, black_engine):
     board = chess.Board()
 
     while not board.is_game_over():
@@ -89,6 +89,22 @@ def run_game(white_engine, black_engine):
         return (0.5, 0.5)
 
 
+def run_game(white_engine, black_engine):
+    board = chess.Board()
+
+    while not board.is_game_over():
+        if board.turn == chess.WHITE:
+            move = white_engine(board)
+            while move not in list(board.legal_moves):
+                move = white_engine.sample(board)
+
+        else:
+            move = black_engine(board)
+        board.push(move)
+
+    return chess.pgn.Game().from_board(board)
+
+
 def get_board_reward_white(board):
     outcome = board.outcome()
     if outcome.winner:
@@ -106,12 +122,12 @@ class _Env:
 
     def step(self, move):
 
-        move = tensor_to_move(move)
+        move = MoveRep.from_tensor(move).to_uci()
         if move not in list(self.board.legal_moves):
             reward = torch.FloatTensor([-1])
             done = torch.BoolTensor([True])
             self.board = chess.Board()
-            board_tensor = board_to_tensor(self.board).unsqueeze(0)
+            board_tensor = Board.from_board(self.board).to_tensor().unsqueeze(0)
             return board_tensor, done, reward
 
         self.board.push(move)
@@ -131,12 +147,12 @@ class _Env:
                 reward = get_board_reward_white(self.board)
                 self.board = chess.Board()
 
-        board_tensor = board_to_tensor(self.board).unsqueeze(0)
+        board_tensor = Board.from_board(self.board).to_tensor().unsqueeze(0)
         return board_tensor, torch.BoolTensor([done]), torch.FloatTensor([reward])
 
     def reset(self):
         self.board = chess.Board()
-        board_tensor = board_to_tensor(self.board).unsqueeze(0)
+        board_tensor = Board.from_board(self.board).to_tensor().unsqueeze(0)
         return board_tensor
 
 
@@ -201,31 +217,8 @@ class RolloutTensor:
 
 import tqdm
 import stonefish.utils as ut
-from stonefish.constants import *
 
-eng = Stockfish(14)
-
-total = 500
-
-is_legal = 0.0
-matches = 0.0
-
-for _ in tqdm.tqdm(range(total)):
-    board = ut.randomize_board()
-    eng_move = eng(board)
-    move_str = np.random.choice(MOVE_TOKENS) + np.random.choice(MOVE_TOKENS)
-    try:
-        move = chess.Move.from_uci(move_str)
-    except:
-        continue
-    model_moves = [move]  # [model(board) for _ in range(1)]
-
-    if eng_move in model_moves:
-        matches += 1.0
-    if any([m in list(board.legal_moves) for m in model_moves]):
-        is_legal += 1.0
-
-print(matches / total)
-print(is_legal / total)
-
+eng = Stockfish(1)
+model_eng = ModelEngine("model_13.pth", "cpu")
+print(run_game(model_eng, eng))
 eng.quit()
