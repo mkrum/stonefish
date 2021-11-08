@@ -1,8 +1,8 @@
-
 import random
 import pyspiel
 import copy
 from open_spiel.python.algorithms import minimax
+
 
 def enumerate_tree(state):
     states = [state]
@@ -13,7 +13,8 @@ def enumerate_tree(state):
             states += enumerate_tree(new_state)
     return states
 
-game = pyspiel.load_game('tic_tac_toe')
+
+game = pyspiel.load_game("tic_tac_toe")
 
 state = game.new_initial_state()
 
@@ -24,6 +25,6 @@ states = list(out.values())
 random.shuffle(states)
 
 for s in states:
-    flattened_str = str(s).replace('\n', '')
+    flattened_str = str(s).replace("\n", "")
     _, action = minimax.alpha_beta_search(game, state=s)
-    print(f'{flattened_str},{action}')
+    print(f"{flattened_str},{action}")
