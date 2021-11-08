@@ -39,23 +39,23 @@ class EnumRep:
 
     @classmethod
     def valid_str(cls) -> List[str]:
-        """ List of valid strings """
+        """List of valid strings"""
         return list(cls._str_to_int.keys())
 
     @classmethod
     def valid_int(cls) -> List[int]:
-        """ List of valid integers """
+        """List of valid integers"""
         return list(cls._str_to_int.values())
 
     @classmethod
     def sample(cls):
-        """ Randomly sample from the valid values """
+        """Randomly sample from the valid values"""
         str_value = np.random.choice(cls.valid_str())
         return cls(str_value)
 
     @classmethod
     def from_str(cls, str_value: str):
-        """ Create representation from a string value """
+        """Create representation from a string value"""
 
         if str_value not in cls._str_to_int.keys():
             raise ValueError(f"{piece_str} is not a valid piece string.")
@@ -63,7 +63,7 @@ class EnumRep:
         return cls(str_value)
 
     def to_str(self) -> str:
-        """ Convert representation into a string """
+        """Convert representation into a string"""
         return self._str_rep
 
     def __str__(self) -> str:
@@ -71,7 +71,7 @@ class EnumRep:
 
     @classmethod
     def from_int(cls, int_value: int):
-        """ Create representation from an integer value """
+        """Create representation from an integer value"""
 
         if int_value not in cls._int_to_str.keys():
             raise ValueError(f"{int_value} is not a valid piece int.")
@@ -80,7 +80,7 @@ class EnumRep:
         return cls(piece_str)
 
     def to_int(self) -> int:
-        """ Convert representation into a integer """
+        """Convert representation into a integer"""
         return self._str_to_int[self._str_rep]
 
     def __int__(self) -> int:
@@ -139,6 +139,13 @@ class ListEnum:
 
     def to_int_list(self) -> List:
         return list(map(lambda x: x.to_int(), self._values))
+
+    @classmethod
+    def from_numpy(cls, arr):
+        return cls(list(map(lambda x: cls.token_type.from_int(x), arr)))
+
+    def to_numpy(self) -> np.ndarray:
+        return np.array(self.to_int_list())
 
     @classmethod
     def from_tensor(cls, tensor_vals):
@@ -370,7 +377,7 @@ class BoardRep(TupleEnum):
 
     @classmethod
     def from_board(cls, board):
-        """ Initializes from a chess.Board object """
+        """Initializes from a chess.Board object"""
         builder = []
 
         # Get all the pieces/en passant
@@ -423,7 +430,7 @@ class BoardRep(TupleEnum):
         return cls(list(map(cls.token_type.from_str, builder)))
 
     def to_board(self) -> chess.Board:
-        """ Converts a BoardRep to a chess.Board object """
+        """Converts a BoardRep to a chess.Board object"""
 
         # Initialize new board and remove the pieces
         board = chess.Board()
@@ -467,7 +474,7 @@ class BoardRep(TupleEnum):
 
     @classmethod
     def from_fen(cls, fen_str):
-        """ Loads from FEN """
+        """Loads from FEN"""
         as_board = chess.Board()
         as_board.set_fen(fen_str)
         ep_square = fen_str.split()[3]
@@ -482,7 +489,7 @@ class BoardRep(TupleEnum):
         return cls.from_board(as_board)
 
     def to_fen(self) -> str:
-        """ Converts to FEN """
+        """Converts to FEN"""
         as_board = self.to_board()
         return as_board.fen()
 

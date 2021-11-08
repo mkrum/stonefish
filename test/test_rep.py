@@ -21,6 +21,13 @@ def dictrep_type_test(cls):
     x.sample()
 
 
+def listrep_test(lr):
+    assert lr.from_str_list(lr.to_str_list()) == lr
+    assert lr.from_int_list(lr.to_int_list()) == lr
+    assert lr.from_tensor(lr.to_tensor()) == lr
+    assert lr.from_numpy(lr.to_numpy()) == lr
+
+
 def test_board_token():
     dictrep_type_test(BoardToken)
 
@@ -45,14 +52,12 @@ def test_board():
 
         assert board.to_fen() == real_board.fen()
         assert board == BoardRep.from_fen(real_board.fen())
-        assert board.from_str_list(board.to_str_list()) == board
-        assert board.from_int_list(board.to_int_list()) == board
-        assert board.from_tensor(board.to_tensor()) == board
+        listrep_test(board)
 
 
 def test_move():
+    move = MoveRep.from_str("e2d2")
+    MoveRep.from_uci(MoveRep.to_uci(move)) == move
     for _ in range(10):
         move = MoveRep.sample()
-        assert move.from_str_list(move.to_str_list()) == move
-        assert move.from_int_list(move.to_int_list()) == move
-        assert move.from_tensor(move.to_tensor()) == move
+        listrep_test(move)
