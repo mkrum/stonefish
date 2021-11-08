@@ -58,7 +58,7 @@ class EnumRep:
         """Create representation from a string value"""
 
         if str_value not in cls._str_to_int.keys():
-            raise ValueError(f"{piece_str} is not a valid piece string.")
+            raise ValueError(f"{str_value} is not a valid piece string.")
 
         return cls(str_value)
 
