@@ -23,7 +23,7 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
 
     loss_fn = nn.CrossEntropyLoss()
 
-    dataloader = DataLoader(data, batch_size=batch_size, drop_last=True, shuffle=True)
+    dataloader = DataLoader(data, batch_size=batch_size, drop_last=False, shuffle=True)
 
     correct = 0.0
     total = 0.0
@@ -41,7 +41,7 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
 
         with torch.no_grad():
             p = model(s, a)
-            p = p.view(-1, MoveToken.size())
+            p = p.view(-1, 6)
             loss = loss_fn(p, labels)
 
         losses.append(loss.item())
@@ -49,9 +49,9 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
         if batch_idx == max_batch:
             break
 
-    acc = correct.item() / total
+    acc = correct / total
     m_loss = np.mean(losses)
-    return acc, m_loss
+    return acc.item(), m_loss
 
 
 def main(dataset, load_model):

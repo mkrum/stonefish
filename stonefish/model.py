@@ -12,6 +12,24 @@ from torch.distributions.categorical import Categorical
 
 from stonefish.rep import MoveToken, BoardToken, BoardRep, MoveRep
 
+def positionalencoding1d(d_model, length):
+    """
+    :param d_model: dimension of the model
+    :param length: length of positions
+    :return: length*d_model position matrix
+    """
+    if d_model % 2 != 0:
+        raise ValueError("Cannot use sin/cos positional encoding with "
+                         "odd dim (got dim={:d})".format(d_model))
+    pe = torch.zeros(length, d_model)
+    position = torch.arange(0, length).unsqueeze(1)
+    div_term = torch.exp((torch.arange(0, d_model, 2, dtype=torch.float) *
+                         -(math.log(10000.0) / d_model)))
+    pe[:, 0::2] = torch.sin(position.float() * div_term)
+    pe[:, 1::2] = torch.cos(position.float() * div_term)
+
+    return pe
+
 
 class Model(nn.Module):
     """
@@ -23,27 +41,30 @@ class Model(nn.Module):
     would be easier just to optimize the encoding as well.
     """
 
-    def __init__(self, device, emb_dim):
+    def __init__(self, device, emb_dim, input_token, output_token):
         super().__init__()
         self.device = device
 
-        self.board_embed = nn.Embedding(BoardToken.size(), emb_dim)
-        self.move_embed = nn.Embedding(MoveToken.size(), emb_dim)
+        self.board_embed = nn.Embedding(input_token.size(), emb_dim)
+        self.move_embed = nn.Embedding(output_token.size(), emb_dim)
 
-        self.pos_encoding = nn.Parameter(torch.zeros(BoardRep.length, emb_dim))
+        self.pos_encoding = positionalencoding1d(emb_dim, 9) 
+        #nn.Parameter(torch.rand(9, emb_dim))
         self.start_token = nn.Parameter(torch.zeros(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
             batch_first=True,
             d_model=emb_dim,
-            num_encoder_layers=1,
-            num_decoder_layers=1,
+            num_encoder_layers=9,
+            num_decoder_layers=9,
         )
 
+        for p in self.transformer.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
         self.to_dist = nn.Sequential(
-            nn.Linear(emb_dim, emb_dim), 
-            nn.ReLU(), 
-            nn.Linear(emb_dim, MoveToken.size())
+            nn.Linear(emb_dim, output_token.size())
         )
 
     def _state_embed(self, state):
@@ -74,8 +95,7 @@ class Model(nn.Module):
 
         pos_embed_state = self._state_embed(state)
         tgt_embed = self._action_embed(action, start_token)
-        out = self._transformer_pass(pos_embed_state, tgt_embed)
-        out = out[:, :2]
+        out = self._transformer_pass(pos_embed_state, tgt_embed[:, :2, :])
         logits = self.to_dist(out)
         return logits
 

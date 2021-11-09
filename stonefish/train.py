@@ -11,26 +11,28 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 from stonefish.model import Model
-from stonefish.dataset import ChessData
+from stonefish.dataset import ChessData, TTTData
 from stonefish.eval import eval_model
 from stonefish.rep import MoveToken
+from stonefish.ttt import TTTBoardToken, TTTMoveToken
 
 
 def main(log_file_path: str, load_model, load_opt):
 
-    data = ChessData("train.csv")
-    test_data = ChessData("test.csv")
+    data = TTTData("data/ttt_train.csv")
+    test_data = TTTData("data/ttt_test.csv")
 
-    dataloader = DataLoader(data, batch_size=256, drop_last=True, shuffle=True)
+    dataloader = DataLoader(data, batch_size=32, drop_last=True, shuffle=True)
     loss_fn = nn.CrossEntropyLoss()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Model(device, 128)
+
+    model = Model(device, 64, TTTBoardToken, TTTMoveToken)
     model = model.to(model.device)
     if load_model:
         model.load_state_dict(torch.load(load_model))
 
-    opt = optim.Adam(model.parameters(), lr=1e-4)
+    opt = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
     if load_opt:
         opt.load_state_dict(torch.load(load_opt))
 
@@ -39,7 +41,7 @@ def main(log_file_path: str, load_model, load_opt):
     losses = deque(maxlen=1000)
 
     for epoch in range(100):
-
+    
         acc, loss = eval_model(model, test_data)
         print(f"({epoch - 1}) Acc: {round(acc, 2)} Test Loss: {loss}")
         log_file.write(f"TEST {epoch-1} {time.time()} {acc}\n")
@@ -47,15 +49,25 @@ def main(log_file_path: str, load_model, load_opt):
         for (batch_idx, (s, a)) in enumerate(dataloader):
             s = s.to(device)
             labels = torch.flatten(a).to(device)
-
+            
             opt.zero_grad()
             p = model(s, a)
-            p = p.view(-1, MoveToken.size())
+            p = p.view(-1, 6)
             loss = loss_fn(p, labels)
             loss.backward()
             opt.step()
 
             loss = loss.item()
+
+            infer = model.inference(s)
+
+            infer = torch.flatten(infer)
+            labels = torch.flatten(a).to(infer.device)
+
+            correct = torch.sum((infer == labels).float())
+            total = infer.shape[0]
+
+            print(correct / total)
             losses.append(loss)
 
             if batch_idx > 0 and batch_idx % 100 == 0:
