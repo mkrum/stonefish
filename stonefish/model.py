@@ -45,23 +45,30 @@ class Model(nn.Module):
         super().__init__()
         self.device = device
 
-        self.board_embed = nn.Embedding(input_token.size(), emb_dim)
-        self.move_embed = nn.Embedding(output_token.size(), emb_dim)
+        self.board_embed = nn.Embedding(input_token.size(), 8)
+        self.move_embed = nn.Embedding(output_token.size(), 8)
 
-        self.pos_encoding = positionalencoding1d(emb_dim, 9) 
-        #nn.Parameter(torch.rand(9, emb_dim))
-        self.start_token = nn.Parameter(torch.zeros(1, 1, emb_dim))
+        self.pos_encoding = positionalencoding1d(emb_dim, 9).to(self.device)
+        self.start_token = nn.Parameter(torch.rand(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
             batch_first=True,
             d_model=emb_dim,
-            num_encoder_layers=9,
-            num_decoder_layers=9,
+            num_encoder_layers=6,
+            num_decoder_layers=6,
         )
 
         for p in self.transformer.parameters():
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
+
+        self.to_emb_board = nn.Sequential(
+            nn.Linear(8, emb_dim)
+        )
+
+        self.to_emb_move = nn.Sequential(
+            nn.Linear(8, emb_dim)
+        )
 
         self.to_dist = nn.Sequential(
             nn.Linear(emb_dim, output_token.size())
@@ -69,13 +76,13 @@ class Model(nn.Module):
 
     def _state_embed(self, state):
         state = state.to(self.device)
-        embed_state = self.board_embed(state)
+        embed_state = self.to_emb_board(self.board_embed(state))
         pos_embed_state = embed_state + self.pos_encoding
         return pos_embed_state
 
     def _action_embed(self, action, start_token):
         action = action.to(self.device)
-        tgt_embed = self.move_embed(action)
+        tgt_embed = self.to_emb_move(self.move_embed(action))
         tgt_start_token = torch.cat((start_token, tgt_embed), dim=1)
         return tgt_start_token
 
@@ -105,14 +112,16 @@ class Model(nn.Module):
         decode = self._get_start_token(state.shape[0])
         tokens = torch.zeros((state.shape[0], 1)).to(self.device)
 
+        act = nn.LogSoftmax(dim=-1)
+
         for i in range(2):
             out = self._transformer_pass(pos_embed_state, decode)
-            logits = self.to_dist(out)[:, -1, :]
+            logits = act(self.to_dist(out)[:, -1, :])
 
             next_value = action_sel(logits)
 
             tokens = torch.cat((tokens, next_value), dim=1)
-            embed_next = self.move_embed(next_value)
+            embed_next = self.to_emb_move(self.move_embed(next_value))
             decode = torch.cat((decode, embed_next), dim=1)
 
         return tokens[:, 1:]

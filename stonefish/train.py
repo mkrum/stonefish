@@ -22,12 +22,12 @@ def main(log_file_path: str, load_model, load_opt):
     data = TTTData("data/ttt_train.csv")
     test_data = TTTData("data/ttt_test.csv")
 
-    dataloader = DataLoader(data, batch_size=32, drop_last=True, shuffle=True)
+    dataloader = DataLoader(data, batch_size=128, drop_last=True, shuffle=True)
     loss_fn = nn.CrossEntropyLoss()
+    other_loss_fn = nn.CrossEntropyLoss(reduction='none')
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = Model(device, 64, TTTBoardToken, TTTMoveToken)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+    model = Model(device, 256, TTTBoardToken, TTTMoveToken)
     model = model.to(model.device)
     if load_model:
         model.load_state_dict(torch.load(load_model))
@@ -40,9 +40,9 @@ def main(log_file_path: str, load_model, load_opt):
 
     losses = deque(maxlen=1000)
 
-    for epoch in range(100):
+    for epoch in range(1000):
     
-        acc, loss = eval_model(model, test_data)
+        acc, loss = eval_model(model, test_data, batch_size=256)
         print(f"({epoch - 1}) Acc: {round(acc, 2)} Test Loss: {loss}")
         log_file.write(f"TEST {epoch-1} {time.time()} {acc}\n")
 
@@ -58,16 +58,6 @@ def main(log_file_path: str, load_model, load_opt):
             opt.step()
 
             loss = loss.item()
-
-            infer = model.inference(s)
-
-            infer = torch.flatten(infer)
-            labels = torch.flatten(a).to(infer.device)
-
-            correct = torch.sum((infer == labels).float())
-            total = infer.shape[0]
-
-            print(correct / total)
             losses.append(loss)
 
             if batch_idx > 0 and batch_idx % 100 == 0:
@@ -88,9 +78,11 @@ if __name__ == "__main__":
     parser.add_argument("log_file")
     parser.add_argument("--load_model")
     parser.add_argument("--load_opt")
+    parser.add_argument("-o", default=False, action="store_true", help="Overwrite by default")
     args = parser.parse_args()
-
-    if os.path.exists(args.log_file):
+    
+    go_ahead = args.o
+    if not go_ahead and os.path.exists(args.log_file):
         res = input(f"File {args.log_file} exists. Overwrite? (Y/n) ")
         go_ahead = res == "" or res.lower() == "y"
 
