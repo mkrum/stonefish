@@ -63,6 +63,7 @@ class Model(nn.Module):
             d_model=emb_dim,
             num_encoder_layers=6,
             num_decoder_layers=6,
+            dropout=0.0,
         )
 
         for p in self.transformer.parameters():
@@ -73,7 +74,9 @@ class Model(nn.Module):
 
         self.to_emb_move = nn.Sequential(nn.Linear(8, emb_dim))
 
-        self.to_dist = nn.Sequential(nn.Linear(emb_dim, output_token.size()))
+        self.to_dist = nn.Sequential(
+            nn.Linear(emb_dim, output_token.size()), nn.LogSoftmax(dim=-1)
+        )
 
     def _state_embed(self, state):
         state = state.to(self.device)
@@ -112,12 +115,11 @@ class Model(nn.Module):
 
         decode = self._get_start_token(state.shape[0])
         tokens = torch.zeros((state.shape[0], 1)).to(self.device)
-
-        act = nn.LogSoftmax(dim=-1)
+        tokens = tokens.long()
 
         for i in range(2):
             out = self._transformer_pass(pos_embed_state, decode)
-            logits = act(self.to_dist(out)[:, -1, :])
+            logits = self.to_dist(out)[:, -1, :]
 
             next_value = action_sel(logits)
 

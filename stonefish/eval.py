@@ -19,20 +19,18 @@ from stonefish.vis import plot_board, square_to_grid, plot_move, mark_move
 from rich.progress import track
 
 
-def eval_model(model, data, batch_size=1024, max_batch=20):
-
-    loss_fn = nn.CrossEntropyLoss()
-
-    dataloader = DataLoader(data, batch_size=batch_size, drop_last=False, shuffle=True)
+def eval_model(model, datal, train_fn, max_batch=20):
 
     correct = 0.0
     total = 0.0
     losses = []
+
     for (batch_idx, (s, a)) in track(
-        enumerate(dataloader),
+        enumerate(datal),
         "Testing...",
-        total=min(len(data) // batch_size, max_batch),
+        total=min(len(datal), max_batch),
     ):
+        model.eval()
         infer = model.inference(s)
 
         infer = torch.flatten(infer)
@@ -42,9 +40,7 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
         total += infer.shape[0]
 
         with torch.no_grad():
-            p = model(s, a)
-            p = p.view(-1, 6)
-            loss = loss_fn(p, labels)
+            loss = train_fn(model, s, a)
 
         losses.append(loss.item())
 
