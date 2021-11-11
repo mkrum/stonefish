@@ -7,6 +7,7 @@ from collections import deque
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
@@ -16,60 +17,40 @@ from stonefish.eval import eval_model
 from stonefish.rep import MoveToken
 from stonefish.ttt import TTTBoardToken, TTTMoveToken
 
+from stonefish.slogging import Logger
 
-def main(log_file_path: str, load_model, load_opt):
 
-    data = TTTData("data/ttt_train.csv")
-    test_data = TTTData("data/ttt_test.csv")
+def train_step(model, state, output):
+    probs = model(state, output)
+    probs = probs.view(-1, probs.shape[-1])
+    loss = F.cross_entropy(probs, output.flatten().cuda())
+    return loss
 
-    dataloader = DataLoader(data, batch_size=128, drop_last=True, shuffle=True)
-    loss_fn = nn.CrossEntropyLoss()
-    other_loss_fn = nn.CrossEntropyLoss(reduction='none')
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
-    model = Model(device, 256, TTTBoardToken, TTTMoveToken)
-    model = model.to(model.device)
-    if load_model:
-        model.load_state_dict(torch.load(load_model))
+def eval_step(model, test_data):
+    out = eval_model(model, test_data, batch_size=256)
+    Logger.test_output(*out)
 
-    opt = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
-    if load_opt:
-        opt.load_state_dict(torch.load(load_opt))
 
-    log_file = open(log_file_path, "w")
+def main(model, opt, train_data, test_data):
 
-    losses = deque(maxlen=1000)
+    dataloader = DataLoader(train_data, batch_size=256, drop_last=True, shuffle=True)
 
     for epoch in range(1000):
-    
-        acc, loss = eval_model(model, test_data, batch_size=256)
-        print(f"({epoch - 1}) Acc: {round(acc, 2)} Test Loss: {loss}")
-        log_file.write(f"TEST {epoch-1} {time.time()} {acc}\n")
+        Logger.epoch()
+        eval_step(model, test_data)
 
-        for (batch_idx, (s, a)) in enumerate(dataloader):
-            s = s.to(device)
-            labels = torch.flatten(a).to(device)
-            
+        for (batch_idx, (state, output)) in enumerate(dataloader):
             opt.zero_grad()
-            p = model(s, a)
-            p = p.view(-1, 6)
-            loss = loss_fn(p, labels)
+            loss = train_step(model, state, output)
             loss.backward()
             opt.step()
 
-            loss = loss.item()
-            losses.append(loss)
+            Logger.loss(batch_idx, loss.item())
 
-            if batch_idx > 0 and batch_idx % 100 == 0:
-                print(f"({epoch}/{batch_idx}) Loss (Avg): {np.mean(losses)}")
+        Logger.save_checkpoint(model, opt)
 
-            log_file.write(f"TRAIN {epoch} {batch_idx} {time.time()} {loss}\n")
-
-        torch.save(model.state_dict(), f"model_{epoch}.pth")
-        torch.save(opt.state_dict(), f"opt.pth")
-
-    acc = eval_model(model, test_data)
-    print(f"({epoch}) Acc: {round(acc, 2)}")
+    eval_step(model, test_data)
 
 
 if __name__ == "__main__":
@@ -78,13 +59,32 @@ if __name__ == "__main__":
     parser.add_argument("log_file")
     parser.add_argument("--load_model")
     parser.add_argument("--load_opt")
-    parser.add_argument("-o", default=False, action="store_true", help="Overwrite by default")
+    parser.add_argument("--dir", default=".")
+    parser.add_argument(
+        "-o", default=False, action="store_true", help="Overwrite by default"
+    )
     args = parser.parse_args()
-    
+
     go_ahead = args.o
     if not go_ahead and os.path.exists(args.log_file):
         res = input(f"File {args.log_file} exists. Overwrite? (Y/n) ")
         go_ahead = res == "" or res.lower() == "y"
 
-    if not os.path.exists(args.log_file) or go_ahead:
-        main(args.log_file, args.load_model, args.load_opt)
+    if not go_ahead:
+        exit()
+
+    Logger.init(args.dir, args.log_file)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = Model(device, 512, TTTBoardToken, TTTMoveToken)
+    model = model.to(model.device)
+    if args.load_model:
+        model.load_state_dict(torch.load(load_model))
+
+    opt = optim.Adam(model.parameters(), lr=0.0001, betas=(0.9, 0.98), eps=1e-9)
+    if args.load_opt:
+        opt.load_state_dict(torch.load(load_opt))
+
+    train_data = TTTData("data/ttt_train.csv")
+    test_data = TTTData("data/ttt_test.csv")
+    main(model, opt, train_data, test_data)

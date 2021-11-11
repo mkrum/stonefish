@@ -29,7 +29,9 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
     total = 0.0
     losses = []
     for (batch_idx, (s, a)) in track(
-        enumerate(dataloader), "Testing...", total=min(len(data)//batch_size, max_batch)
+        enumerate(dataloader),
+        "Testing...",
+        total=min(len(data) // batch_size, max_batch),
     ):
         infer = model.inference(s)
 
@@ -45,7 +47,7 @@ def eval_model(model, data, batch_size=1024, max_batch=20):
             loss = loss_fn(p, labels)
 
         losses.append(loss.item())
-        
+
         if batch_idx == max_batch:
             break
 
