@@ -175,6 +175,14 @@ class TupleEnum(ListEnum):
     def sample(cls):
         return cls([cls.token_type.sample() for _ in range(cls.length)])
 
+    @classmethod
+    def shape(cls):
+        return (cls.length, cls.token_type.size())
+
+    @classmethod
+    def width(cls):
+        return cls.token_type.size()
+
 
 class BoardToken(EnumRep):
     """

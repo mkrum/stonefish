@@ -11,7 +11,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
-from stonefish.model import Model
+from stonefish.model import BaseModel
 from stonefish.dataset import ChessData
 from stonefish.rep import MoveToken, MoveRep, BoardRep
 from stonefish.vis import plot_board, square_to_grid, plot_move, mark_move
@@ -57,7 +57,7 @@ def main(dataset, load_model):
     data = ChessData(dataset)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Model(device, 128)
+    model = BaseModel(device, 128)
     model = model.to(model.device)
     print(model.load_state_dict(torch.load(load_model, map_location=device)))
 
@@ -70,7 +70,7 @@ def vis(dataset, load_model):
     data = ChessData(dataset)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Model(device, 128)
+    model = BaseModel(device, 128)
     model = model.to(model.device)
     model.load_state_dict(torch.load(load_model, map_location=device))
 
@@ -105,7 +105,7 @@ def better_vis(dataset, load_model):
     data = ChessData(dataset)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = Model(device, 128)
+    model = BaseModel(device, 128)
     model = model.to(model.device)
     model.load_state_dict(torch.load(load_model, map_location=device))
 

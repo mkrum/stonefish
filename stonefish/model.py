@@ -38,7 +38,7 @@ def positionalencoding1d(d_model, length):
     return pe
 
 
-class Model(nn.Module):
+class BaseModel(nn.Module):
     """
     A transformer model that is as vanilla as the come. Using the exact
     defaults from the pytorch transfomer class.
@@ -48,14 +48,16 @@ class Model(nn.Module):
     would be easier just to optimize the encoding as well.
     """
 
-    def __init__(self, device, emb_dim, input_token, output_token):
+    def __init__(self, device, input_rep, output_rep, emb_dim=128, load=None):
         super().__init__()
         self.device = device
 
-        self.board_embed = nn.Embedding(input_token.size(), 8)
-        self.move_embed = nn.Embedding(output_token.size(), 8)
+        self.board_embed = nn.Embedding(input_rep.width(), 8)
+        self.move_embed = nn.Embedding(output_rep.width(), 8)
 
-        self.pos_encoding = positionalencoding1d(emb_dim, 9).to(self.device)
+        self.pos_encoding = positionalencoding1d(emb_dim, input_rep.length).to(
+            self.device
+        )
         self.start_token = nn.Parameter(torch.rand(1, 1, emb_dim))
 
         self.transformer = nn.Transformer(
@@ -75,8 +77,11 @@ class Model(nn.Module):
         self.to_emb_move = nn.Sequential(nn.Linear(8, emb_dim))
 
         self.to_dist = nn.Sequential(
-            nn.Linear(emb_dim, output_token.size()), nn.LogSoftmax(dim=-1)
+            nn.Linear(emb_dim, output_rep.width()), nn.LogSoftmax(dim=-1)
         )
+
+        if load:
+            self.load_state_dict(torch.load(load, map_location=device))
 
     def _state_embed(self, state):
         state = state.to(self.device)

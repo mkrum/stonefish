@@ -1,3 +1,4 @@
+import os
 import time
 import torch
 from collections import deque
@@ -8,13 +9,23 @@ class Logger:
     output_dir = None
     log_file = None
     losses = None
+    overwrite = False
 
     epoch_num = 0
 
     @classmethod
-    def init(cls, output_dir=".", log_file="."):
+    def init(cls, output_dir=".", log_file=".", overwrite=False):
         cls.output_dir = output_dir
-        cls.log_file = open(f"{output_dir}/{log_file}", "w")
+        log_path = f"{output_dir}/{log_file}"
+
+        if not overwrite and os.path.exists(log_path):
+            res = input(f"File {log_path} exists. Overwrite? (Y/n) ")
+            go_ahead = res == "" or res.lower() == "y"
+
+            if not go_ahead:
+                exit()
+
+        cls.log_file = open(log_path, "w")
 
     @classmethod
     def save_checkpoint(cls, model, opt):
