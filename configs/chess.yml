@@ -9,6 +9,7 @@ logging: !Logger
 
 model: !BaseModel
     emb_dim: 128
+    load: None
 
 opt: !Adam
     lr: !!float 1e-4
