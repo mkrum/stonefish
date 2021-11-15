@@ -1,68 +1,123 @@
-import yaml
+import sys
 from dataclasses import dataclass
 from argparse import ArgumentParser
+from typing import Any, Dict
+
+import yaml
+from torch.utils.data import Dataset, DataLoader
+import torch.optim as optim
+from rich import print
 
 from stonefish.dataset import ChessData, TTTData
 from stonefish.slogging import Logger
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
-from torch.utils.data import Dataset, DataLoader
-import torch.optim as optim
 
-from typing import Any, Dict
 
 
 @dataclass(frozen=True)
 class LazyConstructor:
-    fn: Any
-    kwargs: Dict
+    """
+    An object that wraps a constructor in a lazy, configurable way.
+    
+    It turns the constructor into a dictionary like object that allows you to
+    set and overwrite the default values like a dictionary, and then intialize
+    kind of like a factory. 
+
+    LazyConstructor should be intialized with a class and a dictionary of key
+    word arguemnts. It will then represent a lazy version of lambda *args:
+    class(*args, **kwargs). 
+
+    If a LazyConstructor depends on a key word argument that is also a
+    LazyConstructor, it will recursively intitialize it before intializing
+    itself.
+
+    >>> class Dice: 
+    ...       def __init__(self, value, max_value=6):
+    ...               self.value = value
+    ...               if self.value > max_value:
+    ...                       print("Bad value")
+    ...       def __str__(self):
+    ...               return f"Dice({self.value})"
+    ...       def __repr__(self):
+    ...               return self.__str__()
+    ... 
+    >>> c = LazyConstructor(Dice, {"max_value": 6})
+    >>> c(1)
+    Dice(1)
+    >>> c(10)
+    Bad value
+    Dice(10)
+    >>> c['max_value'] = 12
+    >>> c(10)
+    Dice(10)
+    >>> print(c)
+    {'class': <class '__main__.Dice'>, 'max_value': 12}
+    >>> c = LazyConstructor(Dice, {"max_value": 6, "value": 1})
+    >>> c()
+    Dice(1)
+    >>> c['value'] = 4
+    >>> c()
+    Dice(4)
+    """
+    _fn: Any
+    _kwargs: Dict
 
     def __getitem__(self, key):
         if key == "class":
-            return self.fn
+            return self._fn
         else:
-            return self.kwargs.__getitem__(key)
+            return self._kwargs.__getitem__(key)
 
     def __setitem__(self, key, value):
         if key == "class":
-            self.fn = value
+            self._fn = value
         else:
-            self.kwargs.__setitem__(key, value)
+            self._kwargs.__setitem__(key, value)
 
     def __call__(self, *args):
-
-        for (k, v) in self.kwargs.items():
+        
+        # If there are any LazyConstructors in the keyword arguments, intialize
+        # them before intializing itself. Allows for a recursive chain of intialization.
+        for (k, v) in self._kwargs.items():
             if isinstance(v, LazyConstructor):
-                self.kwargs[k] = v()
+                self._kwargs[k] = v()
 
-        return self.fn(*args, **self.kwargs)
+        return self._fn(*args, **self._kwargs)
 
     def __repr__(self):
-        d = {"class": self.fn}
-        d.update(self.kwargs)
+        d = {"class": self._fn}
+        d.update(self._kwargs)
         return str(d)
 
     def __str__(self):
         return self.__repr__()
 
     def keys(self):
-        return ["class"] + list(self.kwargs.keys())
+        """ Fake keys to act like a dictionary """
+        return ["class"] + list(self._kwargs.keys())
+
+    def values(self):
+        """ Fake values to act like a dictionary """
+        return [self._fn] + list(self._kwargs.values())
 
     def items(self):
+        """ Fake items to act like a dictionary """
         keys = self.keys()
         return [(k, self.__getitem__(k)) for k in keys]
 
 
-def make_basic_constructor(type_, name):
-    def _constructor(loader, node):
-        value = loader.construct_mapping(node)
-        return type_(**value)
-
-    yaml.add_constructor("!" + name, _constructor)
-
-
 def make_lazy_constructor(type_, name):
+    """
+    Exposes to YAML a lazy constructor for the object, so it can be referenced
+    in a config.
+
+    >>> make_lazy_constructor(Dice, "Dice")
+    >>> data = yaml.load("dice: !Dice")
+    >>> data["dice"]()
+    Dice()
+    """
     def _constructor(loader, node):
         kwargs = loader.construct_mapping(node)
         return LazyConstructor(type_, kwargs)
@@ -70,47 +125,31 @@ def make_lazy_constructor(type_, name):
     yaml.add_constructor("!" + name, _constructor)
 
 
-make_lazy_constructor(TTTData, "TTTData")
-make_lazy_constructor(ChessData, "ChessData")
-make_lazy_constructor(BaseModel, "BaseModel")
-make_lazy_constructor(DataLoader, "DataLoader")
-
-for o in [
-    "Adadelta",
-    "Adagrad",
-    "Adam",
-    "AdamW",
-    "SparseAdam",
-    "Adamax",
-    "ASGD",
-    "LBFGS",
-    "RMSprop",
-    "Rprop",
-    "SGD",
-]:
-    make_lazy_constructor(getattr(optim, o), o)
-
-
 def logging_constructor(loader, node):
+    """
+    YAML constructor for the Logging object
+
+    Only difference here is that it will call the "init" for the global logger
+    instead of really intializing anything.
+    """
     value = loader.construct_mapping(node)
     Logger.init(**value)
     return Logger
 
 
-yaml.add_constructor("!Logger", logging_constructor)
-
-
 def make_type_constructor(type_, name):
+    """
+    Exposes to YAML the unwrapped class
+
+    >>> make_type_constructor(Dice, "Dice")
+    >>> data = yaml.load("dice: !Dice")
+    >>> data["dice"]
+     <class '__main__.Dice'>
+    """
     def _constructor(loader, node):
         return type_
 
     yaml.add_constructor("!" + name, _constructor)
-
-
-make_type_constructor(TTTBoardRep, "TTTBoardRep")
-make_type_constructor(TTTMoveRep, "TTTMoveRep")
-make_type_constructor(BoardRep, "BoardRep")
-make_type_constructor(MoveRep, "MoveRep")
 
 
 def load_config(path):
@@ -119,9 +158,7 @@ def load_config(path):
 
 
 def get_all_keys(config):
-
     keys = []
-
     for (k, v) in config.items():
         if hasattr(v, "keys"):
             subkeys = get_all_keys(v)
@@ -170,13 +207,55 @@ question.
 
     return parser
 
-
-def load_config_and_parse_cli(path):
+def load_config_and_create_parser():
+    path = sys.argv[1]
     config = load_config(path)
     parser = create_parser(path, config)
-    args = parser.parse_args()
+    return config, parser
+
+def parse_args_into_config(config, args, verbose=True):
 
     for (k, v) in vars(args).items():
         if v and k != "config_file":
             dot_set(config, k, v)
+
+    if verbose:
+        print(config)
+
     return config
+
+def load_config_and_parse_cli(verbose=True):
+    config, parser = load_config_and_create_parser()
+    args = parser.parse_args()
+    config = parse_args_into_config(config, args, verbose=verbose)
+    return config
+
+# Lazy Objects
+make_lazy_constructor(TTTData, "TTTData")
+make_lazy_constructor(ChessData, "ChessData")
+make_lazy_constructor(BaseModel, "BaseModel")
+make_lazy_constructor(DataLoader, "DataLoader")
+
+for o in [
+    "Adadelta",
+    "Adagrad",
+    "Adam",
+    "AdamW",
+    "SparseAdam",
+    "Adamax",
+    "ASGD",
+    "LBFGS",
+    "RMSprop",
+    "Rprop",
+    "SGD",
+]:
+    make_lazy_constructor(getattr(optim, o), o)
+
+# Logger YAML configuration
+yaml.add_constructor("!Logger", logging_constructor)
+
+# Type objects, interpreted as literal type
+make_type_constructor(TTTBoardRep, "TTTBoardRep")
+make_type_constructor(TTTMoveRep, "TTTMoveRep")
+make_type_constructor(BoardRep, "BoardRep")
+make_type_constructor(MoveRep, "MoveRep")
