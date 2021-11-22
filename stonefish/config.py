@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 from typing import Any, Dict
 
 import yaml
+import torch
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from rich import print
@@ -15,25 +16,35 @@ from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
 
+def load_model(config, load=None):
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = config["model"](device, config["input_rep"], config["output_rep"])
+
+    if load:
+        model.load_state_dict(torch.load(load, map_location=device))
+
+    return model
+
 
 @dataclass(frozen=True)
 class LazyConstructor:
     """
     An object that wraps a constructor in a lazy, configurable way.
-    
+
     It turns the constructor into a dictionary like object that allows you to
     set and overwrite the default values like a dictionary, and then intialize
-    kind of like a factory. 
+    kind of like a factory.
 
     LazyConstructor should be intialized with a class and a dictionary of key
     word arguemnts. It will then represent a lazy version of lambda *args:
-    class(*args, **kwargs). 
+    class(*args, **kwargs).
 
     If a LazyConstructor depends on a key word argument that is also a
     LazyConstructor, it will recursively intitialize it before intializing
     itself.
 
-    >>> class Dice: 
+    >>> class Dice:
     ...       def __init__(self, value, max_value=6):
     ...               self.value = value
     ...               if self.value > max_value:
@@ -42,7 +53,7 @@ class LazyConstructor:
     ...               return f"Dice({self.value})"
     ...       def __repr__(self):
     ...               return self.__str__()
-    ... 
+    ...
     >>> c = LazyConstructor(Dice, {"max_value": 6})
     >>> c(1)
     Dice(1)
@@ -61,6 +72,7 @@ class LazyConstructor:
     >>> c()
     Dice(4)
     """
+
     _fn: Any
     _kwargs: Dict
 
@@ -77,7 +89,7 @@ class LazyConstructor:
             self._kwargs.__setitem__(key, value)
 
     def __call__(self, *args):
-        
+
         # If there are any LazyConstructors in the keyword arguments, intialize
         # them before intializing itself. Allows for a recursive chain of intialization.
         for (k, v) in self._kwargs.items():
@@ -118,6 +130,7 @@ def make_lazy_constructor(type_, name):
     >>> data["dice"]()
     Dice()
     """
+
     def _constructor(loader, node):
         kwargs = loader.construct_mapping(node)
         return LazyConstructor(type_, kwargs)
@@ -146,6 +159,7 @@ def make_type_constructor(type_, name):
     >>> data["dice"]
      <class '__main__.Dice'>
     """
+
     def _constructor(loader, node):
         return type_
 
@@ -207,11 +221,13 @@ question.
 
     return parser
 
+
 def load_config_and_create_parser():
     path = sys.argv[1]
     config = load_config(path)
     parser = create_parser(path, config)
     return config, parser
+
 
 def parse_args_into_config(config, args, verbose=True):
 
@@ -224,11 +240,13 @@ def parse_args_into_config(config, args, verbose=True):
 
     return config
 
+
 def load_config_and_parse_cli(verbose=True):
     config, parser = load_config_and_create_parser()
     args = parser.parse_args()
     config = parse_args_into_config(config, args, verbose=verbose)
     return config
+
 
 # Lazy Objects
 make_lazy_constructor(TTTData, "TTTData")
@@ -259,3 +277,4 @@ make_type_constructor(TTTBoardRep, "TTTBoardRep")
 make_type_constructor(TTTMoveRep, "TTTMoveRep")
 make_type_constructor(BoardRep, "BoardRep")
 make_type_constructor(MoveRep, "MoveRep")
+make_type_constructor(None, "None")

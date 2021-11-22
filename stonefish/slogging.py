@@ -6,12 +6,14 @@ from collections import deque
 
 class Logger:
 
-    output_dir = None
-    log_file = None
-    losses = None
-    overwrite = False
+    output_dir: str = None
+    log_file: str = None
+    overwrite: bool = False
+    log_freq: int = 100
+    checkpoint_freq: int = 10000
 
-    epoch_num = 0
+    _losses = None
+    _epoch_num = 0
 
     @classmethod
     def init(cls, output_dir=".", log_file=".", overwrite=False):
@@ -29,24 +31,27 @@ class Logger:
 
     @classmethod
     def save_checkpoint(cls, model, opt):
-        torch.save(model.state_dict(), f"{cls.output_dir}/model_{cls.epoch_num}.pth")
+        torch.save(model.state_dict(), f"{cls.output_dir}/model_{cls._epoch_num}.pth")
         torch.save(opt.state_dict(), f"{cls.output_dir}/opt.pth")
 
     @classmethod
     def test_output(cls, acc, loss):
-        print(f"({cls.epoch_num}) Acc: {round(acc, 2)} Test Loss: {loss}")
-        cls.log_file.write(f"TEST {cls.epoch_num} {time.time()} {acc}\n")
+        print(f"({cls._epoch_num}) Acc: {round(acc, 2)} Test Loss: {loss}")
+        cls.log_file.write(f"TEST {cls._epoch_num} {time.time()} {acc}\n")
 
     @classmethod
     def epoch(cls):
-        cls.epoch_num += 1
-        cls.losses = deque(maxlen=1000)
+        cls._epoch_num += 1
+        cls._losses = deque(maxlen=1000)
 
     @classmethod
-    def loss(cls, batch_idx, loss):
-        cls.losses.append(loss)
+    def loss(cls, model, opt, batch_idx, loss):
+        cls._losses.append(loss)
 
-        if batch_idx > 0 and batch_idx % 100 == 0:
-            print(f"({cls.epoch_num}/{batch_idx}) Loss (Avg): {np.mean(losses)}")
+        cls.log_file.write(f"TRAIN {cls._epoch_num} {batch_idx} {time.time()} {loss}\n")
 
-        cls.log_file.write(f"TRAIN {cls.epoch_num} {batch_idx} {time.time()} {loss}\n")
+        if batch_idx > 0 and batch_idx % cls.log_freq == 0:
+            print(f"({cls._epoch_num}/{batch_idx}) Loss (Avg): {np.mean(cls._losses)}")
+
+        if batch_idx > 0 and batch_idx % cls.checkpoint_freq == 0:
+            cls.save_checkpoint(model, opt)

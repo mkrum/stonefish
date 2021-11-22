@@ -8,8 +8,9 @@ import chess.pgn
 import numpy as np
 from dataclasses import dataclass, field
 
-from stonefish.model import Model
+from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
+from stonefish.vis import pgn_viewer
 
 
 @dataclass
@@ -33,6 +34,17 @@ class Stockfish:
 
 
 @dataclass
+class RandomEngine:
+    """
+    Agent wrapper for the stockfish engine
+    """
+
+    def __call__(self, board):
+        moves = list(board.legal_moves)
+        return np.random.choice(moves)
+
+
+@dataclass
 class ModelEngine:
     """
     Agent wrapper for the stockfish engine
@@ -44,7 +56,7 @@ class ModelEngine:
 
     def __post_init__(self):
         device = torch.device(self.device)
-        model = Model(device, 128)
+        model = BaseModel(device, BoardRep, MoveRep, emb_dim=256)
         model = model.to(model.device)
         model.load_state_dict(torch.load(self.path, map_location=device))
         self._model = model
@@ -102,7 +114,8 @@ def run_game(white_engine, black_engine):
             move = black_engine(board)
         board.push(move)
 
-    return chess.pgn.Game().from_board(board)
+    pgn_viewer(chess.pgn.Game().from_board(board))
+    exit()
 
 
 def get_board_reward_white(board):
@@ -218,7 +231,7 @@ class RolloutTensor:
 import tqdm
 import stonefish.utils as ut
 
-eng = Stockfish(1)
-model_eng = ModelEngine("model_13.pth", "cpu")
-print(run_game(model_eng, eng))
-eng.quit()
+model_eng = ModelEngine("model_1.pth", "cpu")
+eng = RandomEngine()
+for _ in range(10000):
+    run_game(model_eng, eng)

@@ -8,22 +8,21 @@ logging: !Logger
     overwrite: True
 
 model: !BaseModel
-    emb_dim: 128
-    load: None
+    emb_dim: 256
 
 opt: !Adam
     lr: !!float 1e-4
     betas: !!python/tuple [0.9, 0.98]
     eps: !!float 1e-9
 
-train_data: !DataLoader
+train_dl: !DataLoader
     dataset: !ChessData
         path: ./data/train_5.csv 
     batch_size: 128
     shuffle: True
     drop_last: True
 
-test_data: !DataLoader
+test_dl: !DataLoader
     dataset: !ChessData
         path: ./data/test_5.csv 
     batch_size: 128
