@@ -1,6 +1,8 @@
 import chess
 import stonefish.utils as ut
-from stonefish.rep import BoardToken, MoveToken, BoardRep, MoveRep
+from stonefish.rep import BoardToken, MoveToken, BoardRep, MoveRep, create_tokenizer_rep
+from stonefish.rep import *
+import transformers
 
 
 def dictrep_type_test(cls):
@@ -61,3 +63,27 @@ def test_move():
     for _ in range(10):
         move = MoveRep.sample()
         listrep_test(move)
+
+
+def test_language():
+
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+
+    BertBaseCased = create_tokenizer_rep("BertBaseCased", tokenizer)
+
+    # Test with actual text
+    test_str = "Outlined against a blue, gray October sky the Four Horsemen rode again."
+    test = BertBaseCased.from_str(test_str)
+
+    assert test.to_str() == test_str
+    assert test.to_str(skip_special_tokens=False) != test_str
+    listrep_test(test)
+
+    # Test with gibberish
+    gibberish_str = "adlkfjaldf. lakdsjflajfd"
+    gibberish = BertBaseCased.from_str(gibberish_str)
+    listrep_test(gibberish)
+    assert gibberish.to_str() == gibberish_str
+    assert gibberish.to_str(skip_special_tokens=False) != gibberish_str

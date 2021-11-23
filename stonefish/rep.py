@@ -1,4 +1,5 @@
 import itertools
+from functools import partial
 from typing import List, Dict
 from dataclasses import dataclass, field
 
@@ -142,7 +143,8 @@ class ListEnum:
 
     @classmethod
     def from_numpy(cls, arr):
-        return cls(list(map(lambda x: cls.token_type.from_int(x), arr)))
+        int_list = list(arr)
+        return cls.from_int_list(int_list)
 
     def to_numpy(self) -> np.ndarray:
         return np.array(self.to_int_list())
@@ -503,3 +505,59 @@ class BoardRep(TupleEnum):
 
     def __str__(self):
         return self.to_fen()
+
+
+def _tokenizer__init__(self, int_values):
+    assert isinstance(int_values, list)
+    self._values = int_values
+
+
+@classmethod
+def _tokenizer_from_str(cls, str_val):
+    ids = cls.tokenizer.encode(str_val)
+    return cls.from_int_list(ids)
+
+
+def _tokenizer_to_str(self, skip_special_tokens=True):
+    ret = self.tokenizer.decode(self._values, skip_special_tokens=skip_special_tokens)
+    return ret
+
+
+@classmethod
+def _tokenizer_from_str_list(cls, tokens):
+    ids = cls.tokenizer.convert_tokens_to_ids(tokens)
+    return cls(ids)
+
+
+@classmethod
+def _tokenizer_from_int_list(cls, int_values):
+    return cls(int_values)
+
+
+def _tokenizer_to_str_list(self):
+    return self.tokenizer.convert_ids_to_tokens(self._values)
+
+
+def _tokenizer_to_int_list(self):
+    return self._values
+
+
+def create_tokenizer_rep(name, tokenizer):
+
+    TokenizerRep = type(
+        name,
+        (ListEnum,),
+        {
+            "tokenizer": tokenizer,
+            "__init__": _tokenizer__init__,
+            "_value": None,
+            "to_str": _tokenizer_to_str,
+            "from_str": _tokenizer_from_str,
+            "from_str_list": _tokenizer_from_str_list,
+            "to_str_list": _tokenizer_to_str_list,
+            "from_int_list": _tokenizer_from_int_list,
+            "to_int_list": _tokenizer_to_int_list,
+        },
+    )
+
+    return TokenizerRep
