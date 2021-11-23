@@ -1,0 +1,7 @@
+torch
+python-chess
+pytest
+pytest-cov
+rich
+matplotlib
+pyyaml
