@@ -108,15 +108,15 @@ class LazyConstructor:
         return self.__repr__()
 
     def keys(self):
-        """ Fake keys to act like a dictionary """
+        """Fake keys to act like a dictionary"""
         return ["class"] + list(self._kwargs.keys())
 
     def values(self):
-        """ Fake values to act like a dictionary """
+        """Fake values to act like a dictionary"""
         return [self._fn] + list(self._kwargs.values())
 
     def items(self):
-        """ Fake items to act like a dictionary """
+        """Fake items to act like a dictionary"""
         keys = self.keys()
         return [(k, self.__getitem__(k)) for k in keys]
 

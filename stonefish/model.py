@@ -141,7 +141,6 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def inference(self, state):
-
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
 
@@ -153,4 +152,3 @@ class BaseModel(nn.Module):
             return Categorical(logits=logits).sample().view(-1, 1)
 
         return self._inference(state, sample_action_sel)
-
