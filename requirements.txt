@@ -1,4 +1,6 @@
 torch
+transformers
+torchtext
 python-chess
 pytest
 pytest-cov
