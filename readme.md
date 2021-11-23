@@ -6,3 +6,9 @@
 \__ \ || (_) | | | |  __/  _| \__ \ | | |
 |___/\__\___/|_| |_|\___|_| |_|___/_| |_|
 ```
+
+# Quickstart
+```
+docker pull mkrum/stonefish
+docker run -it --rm mkrum/stonefish python -m stonefish.train configs/ttt.yml
+```
