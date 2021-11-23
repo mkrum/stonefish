@@ -9,6 +9,8 @@
 
 # Quickstart
 ```
-docker pull mkrum/stonefish
 docker run -it --rm mkrum/stonefish python -m stonefish.train configs/ttt.yml
+```
+```
+docker run -v $(pwd)/stonefish:/root/stonefish/stonefish -it --rm mkrum/stonefish python -m stonefish.train configs/ttt.yml
 ```
