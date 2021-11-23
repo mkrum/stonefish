@@ -66,7 +66,7 @@ class BaseModel(nn.Module):
         self.pos_encoding = positionalencoding1d(emb_dim, input_rep.length).to(
             self.device
         )
-        self.start_token = nn.Parameter(torch.rand(1, 1, emb_dim))
+        self.start_token = nn.Parameter(torch.rand(1, 1, emb_dim).to(self.device))
 
         self.transformer = nn.Transformer(
             batch_first=True,
@@ -141,6 +141,7 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def inference(self, state):
+
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
 
@@ -153,97 +154,3 @@ class BaseModel(nn.Module):
 
         return self._inference(state, sample_action_sel)
 
-
-class DiscriminatorModel(nn.Module):
-    """"""
-
-    def __init__(self, device, input_rep, emb_dim=128):
-        super().__init__()
-        self.device = device
-
-        self.input_embed = nn.Embedding(input_rep.width(), 8)
-
-        self.pos_encoding = positionalencoding1d(emb_dim, input_rep.length).to(
-            self.device
-        )
-
-        self.transformer = nn.Transformer(
-            batch_first=True,
-            d_model=emb_dim,
-            num_encoder_layers=6,
-            num_decoder_layers=6,
-            dropout=0.0,
-        )
-
-        for p in self.transformer.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
-        self.to_emb_input = nn.Sequential(nn.Linear(8, emb_dim))
-
-        self.to_pred = nn.Sequential(nn.Linear(emb_dim, 2), nn.LogSoftmax(dim=-1))
-
-    def _state_embed(self, state):
-        state = state.to(self.device)
-        embed_state = self.to_emb_board(self.board_embed(state))
-        pos_embed_state = embed_state + self.pos_encoding
-        return pos_embed_state
-
-    def _action_embed(self, action, start_token):
-        action = action.to(self.device)
-        tgt_embed = self.to_emb_move(self.move_embed(action))
-        tgt_start_token = torch.cat((start_token, tgt_embed), dim=1)
-        return tgt_start_token
-
-    def _get_start_token(self, batch_size):
-        repeat_token = self.start_token.repeat(batch_size, 1, 1)
-        return repeat_token.to(self.device)
-
-    def _transformer_pass(self, src, tgt):
-        tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(
-            self.device
-        )
-        out = self.transformer(src, tgt, tgt_mask=tgt_mask)
-        return out
-
-    def forward(self, state, action):
-        start_token = self._get_start_token(state.shape[0])
-
-        pos_embed_state = self._state_embed(state)
-        tgt_embed = self._action_embed(action, start_token)
-        out = self._transformer_pass(pos_embed_state, tgt_embed[:, :2, :])
-        logits = self.to_dist(out)
-        return logits
-
-    def _inference(self, state, action_sel):
-        pos_embed_state = self._state_embed(state)
-
-        decode = self._get_start_token(state.shape[0])
-        tokens = torch.zeros((state.shape[0], 1)).to(self.device)
-        tokens = tokens.long()
-
-        for i in range(2):
-            out = self._transformer_pass(pos_embed_state, decode)
-            logits = self.to_dist(out)[:, -1, :]
-
-            next_value = action_sel(logits)
-
-            tokens = torch.cat((tokens, next_value), dim=1)
-            embed_next = self.to_emb_move(self.move_embed(next_value))
-            decode = torch.cat((decode, embed_next), dim=1)
-
-        return tokens[:, 1:]
-
-    @torch.no_grad()
-    def inference(self, state):
-        def max_action_sel(logits):
-            return torch.argmax(logits, dim=1).view(-1, 1)
-
-        return self._inference(state, max_action_sel)
-
-    @torch.no_grad()
-    def sample(self, state):
-        def sample_action_sel(logits):
-            return Categorical(logits=logits).sample().view(-1, 1)
-
-        return self._inference(state, sample_action_sel)

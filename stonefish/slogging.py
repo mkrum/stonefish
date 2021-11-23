@@ -2,6 +2,7 @@ import os
 import time
 import torch
 from collections import deque
+import numpy as np
 
 
 class Logger:
