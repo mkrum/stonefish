@@ -7,7 +7,9 @@ RUN apt-get update && apt-get install -y git wget
 RUN git clone https://github.com/mkrum/stonefish.git && \
             cd stonefish && \
             pip install -r requirements.txt && \
-            pip install -e .
+            pip install -e . && \
+            cd -
+
 
 WORKDIR /root/stonefish
 
