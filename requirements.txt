@@ -1,6 +1,6 @@
 torch
 transformers
-torchtext
+datasets
 python-chess
 pytest
 pytest-cov
