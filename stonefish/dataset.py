@@ -2,10 +2,21 @@
 Simple pytorch dataset for the chess data
 """
 
+import torch
 from torch.utils.data import Dataset
 
 from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
+from torch.nn.utils.rnn import pad_sequence
+
+
+def default_collate_fn(batch):
+    source, target = zip(*batch)
+
+    source = pad_sequence(source, batch_first=True, padding_value=-1)
+    target = pad_sequence(target, batch_first=True, padding_value=-1)
+
+    return source, target
 
 
 class ChessData(Dataset):

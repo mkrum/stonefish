@@ -9,11 +9,12 @@ from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from rich import print
 
-from stonefish.dataset import ChessData, TTTData
+from stonefish.dataset import ChessData, TTTData, default_collate_fn
 from stonefish.slogging import Logger
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
+from stonefish.language import CommonGen
 
 
 def load_model(config, load=None):
@@ -121,7 +122,7 @@ class LazyConstructor:
         return [(k, self.__getitem__(k)) for k in keys]
 
 
-def make_lazy_constructor(type_, name):
+def make_lazy_constructor(type_, name, default_kwargs=None):
     """
     Exposes to YAML a lazy constructor for the object, so it can be referenced
     in a config.
@@ -134,6 +135,15 @@ def make_lazy_constructor(type_, name):
 
     def _constructor(loader, node):
         kwargs = loader.construct_mapping(node)
+
+        # Surely, there must be a better way to do this, right? I tried .update
+        # but that was casuing weird issues.
+
+        if default_kwargs is not None:
+            for (k, v) in default_kwargs.items():
+                if k not in kwargs.keys():
+                    kwargs[k] = v
+
         return LazyConstructor(type_, kwargs)
 
     yaml.add_constructor("!" + name, _constructor)
@@ -253,7 +263,8 @@ def load_config_and_parse_cli(verbose=True):
 make_lazy_constructor(TTTData, "TTTData")
 make_lazy_constructor(ChessData, "ChessData")
 make_lazy_constructor(BaseModel, "BaseModel")
-make_lazy_constructor(DataLoader, "DataLoader")
+make_lazy_constructor(DataLoader, "DataLoader", {"collate_fn": default_collate_fn})
+make_lazy_constructor(CommonGen, "CommonGen")
 
 for o in [
     "Adadelta",
