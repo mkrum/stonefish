@@ -59,7 +59,7 @@ class EnumRep:
         """Create representation from a string value"""
 
         if str_value not in cls._str_to_int.keys():
-            raise ValueError(f"{str_value} is not a valid piece string.")
+            raise ValueError(f"{str_value} is not a valid string.")
 
         return cls(str_value)
 
@@ -230,7 +230,9 @@ class BoardToken(EnumRep):
 
     _numbers = list(map(str, range(10)))  # numbers 0-9 for the move clocks
 
-    _tokens = _numbers + _info_tokens + _pieces + [p.upper() for p in _pieces]
+    _tokens = (
+        ["<start>"] + _numbers + _info_tokens + _pieces + [p.upper() for p in _pieces]
+    )
 
     _str_to_int: Dict[str, int] = {b: i for (i, b) in enumerate(_tokens)}
     _int_to_str: Dict[str, int] = {i: b for (i, b) in enumerate(_tokens)}
@@ -270,7 +272,7 @@ class MoveToken(EnumRep):
     )
 
     # All of the possible tokens in the move space.
-    _tokens = _squares + _top_promotions + _bottom_promotions
+    _tokens = ["<start>"] + _squares + _top_promotions + _bottom_promotions
 
     _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_tokens)}
     _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_tokens)}

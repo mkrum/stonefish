@@ -9,8 +9,6 @@ from stonefish.rep import MoveToken, MoveRep, BoardRep
 from stonefish.vis import plot_board, square_to_grid, plot_move, mark_move
 from stonefish.slogging import Logger
 
-from rich.progress import track
-
 
 def eval_model(model, datal, train_fn, max_batch=20):
 
@@ -18,16 +16,11 @@ def eval_model(model, datal, train_fn, max_batch=20):
     total = 0.0
     losses = []
 
-    for (batch_idx, (s, a)) in track(
-        enumerate(datal),
-        "Testing...",
-        total=min(len(datal), max_batch),
-    ):
+    for (batch_idx, (s, a)) in enumerate(datal):
         model.eval()
-        infer = model.inference(s)
-
-        infer = torch.flatten(infer)
-        labels = torch.flatten(a).to(infer.device)
+        infer = model.inference(s, 2)
+        infer = torch.flatten(infer[:, 1:])
+        labels = torch.flatten(a[:, 1:]).to(infer.device)
 
         correct += torch.sum((infer == labels).float())
         total += infer.shape[0]

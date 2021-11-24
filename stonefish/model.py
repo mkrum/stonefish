@@ -13,6 +13,11 @@ from torch.distributions.categorical import Categorical
 from stonefish.rep import MoveToken, BoardToken, BoardRep, MoveRep
 
 
+def get_mask(data):
+    mask = data == -1
+    return mask.to(data.device)
+
+
 def positionalencoding1d(d_model, length):
     """
     :param d_model: dimension of the model
@@ -56,17 +61,18 @@ class BaseModel(nn.Module):
         emb_dim=128,
         num_encoder_layers=6,
         num_decoder_layers=6,
+        start_id=0,
     ):
         super().__init__()
         self.device = device
 
+        self.input_rep = input_rep
+        self.output_rep = output_rep
+
         self.board_embed = nn.Embedding(input_rep.width(), 8)
         self.move_embed = nn.Embedding(output_rep.width(), 8)
 
-        self.pos_encoding = positionalencoding1d(emb_dim, input_rep.length).to(
-            self.device
-        )
-        self.start_token = nn.Parameter(torch.rand(1, 1, emb_dim).to(self.device))
+        self.pe = positionalencoding1d(emb_dim, 10).to(self.device)
 
         self.transformer = nn.Transformer(
             batch_first=True,
@@ -88,47 +94,66 @@ class BaseModel(nn.Module):
             nn.Linear(emb_dim, output_rep.width()), nn.LogSoftmax(dim=-1)
         )
 
+        self.start_token = torch.tensor([start_id]).view(1, 1)
+
+    def _encode_position(self, data):
+
+        if self.pe.device != data.device:
+            self.pe = self.pe.to(data.device)
+
+        return data + self.pe[: data.shape[1]]
+
     def _state_embed(self, state):
         state = state.to(self.device)
         embed_state = self.to_emb_board(self.board_embed(state))
-        pos_embed_state = embed_state + self.pos_encoding
+        pos_embed_state = self._encode_position(embed_state)
         return pos_embed_state
 
-    def _action_embed(self, action, start_token):
+    def _action_embed(self, action):
         action = action.to(self.device)
         tgt_embed = self.to_emb_move(self.move_embed(action))
-        tgt_start_token = torch.cat((start_token, tgt_embed), dim=1)
-        return tgt_start_token
+        pos_tgt_embed = self._encode_position(tgt_embed)
+        return pos_tgt_embed
 
-    def _get_start_token(self, batch_size):
-        repeat_token = self.start_token.repeat(batch_size, 1, 1)
-        return repeat_token.to(self.device)
+    def _transformer_pass(self, src, tgt, src_padding_mask, tgt_padding_mask):
 
-    def _transformer_pass(self, src, tgt):
         tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(
             self.device
         )
-        out = self.transformer(src, tgt, tgt_mask=tgt_mask)
+
+        out = self.transformer(
+            src,
+            tgt,
+            tgt_mask=tgt_mask,
+            src_key_padding_mask=src_padding_mask,
+            tgt_key_padding_mask=tgt_padding_mask,
+        )
         return out
 
     def forward(self, state, action):
-        start_token = self._get_start_token(state.shape[0])
+        mask = get_mask(state)
+        tgt_mask = get_mask(action)
 
         pos_embed_state = self._state_embed(state)
-        tgt_embed = self._action_embed(action, start_token)
-        out = self._transformer_pass(pos_embed_state, tgt_embed[:, :2, :])
+        tgt_embed = self._action_embed(action)
+        out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
         logits = self.to_dist(out)
-        return logits
+        return logits[:, :-1, :]
 
-    def _inference(self, state, action_sel):
+    def _inference(self, state, max_len, action_sel):
+        mask = get_mask(state)
+
         pos_embed_state = self._state_embed(state)
 
-        decode = self._get_start_token(state.shape[0])
-        tokens = torch.zeros((state.shape[0], 1)).to(self.device)
-        tokens = tokens.long()
+        start_token = self.start_token.repeat(state.shape[0], 1)
+        tokens = start_token
 
-        for i in range(2):
-            out = self._transformer_pass(pos_embed_state, decode)
+        for i in range(max_len):
+            decode = self._action_embed(tokens)
+            tgt_mask = torch.zeros(decode.shape[0], decode.shape[1]).bool()
+
+            out = self._transformer_pass(pos_embed_state, decode, mask, tgt_mask)
+
             logits = self.to_dist(out)[:, -1, :]
 
             next_value = action_sel(logits)
@@ -137,18 +162,18 @@ class BaseModel(nn.Module):
             embed_next = self.to_emb_move(self.move_embed(next_value))
             decode = torch.cat((decode, embed_next), dim=1)
 
-        return tokens[:, 1:]
+        return tokens
 
     @torch.no_grad()
-    def inference(self, state):
+    def inference(self, state, max_len):
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
 
-        return self._inference(state, max_action_sel)
+        return self._inference(state, max_len, max_action_sel)
 
     @torch.no_grad()
-    def sample(self, state):
+    def sample(self, state, max_len):
         def sample_action_sel(logits):
             return Categorical(logits=logits).sample().view(-1, 1)
 
-        return self._inference(state, sample_action_sel)
+        return self._inference(state, max_len, sample_action_sel)
