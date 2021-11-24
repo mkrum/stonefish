@@ -10,7 +10,10 @@ from stonefish.slogging import Logger
 def train_step(model, state, output):
     model.train()
     probs = model(state, output)
-    probs = probs.view(-1, probs.shape[-1])
+    probs = probs.reshape(-1, probs.shape[-1])
+    output = output[:, 1:].reshape(
+        -1,
+    )
     loss = F.nll_loss(probs, output.flatten().to(probs.device))
     return loss
 
@@ -48,7 +51,6 @@ def sample_pg_step(model, state, output, N=10):
 
 
 def joint_step(model, state, output):
-
     return sample_pg_step(model, state, output, N=10) + train_step(model, state, output)
 
 
