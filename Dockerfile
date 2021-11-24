@@ -1,10 +1,11 @@
 FROM pytorch/pytorch:1.10.0-cuda11.3-cudnn8-runtime
+ARG BRANCH=main
 
 WORKDIR /root/
 
 RUN apt-get update && apt-get install -y git wget
 
-RUN git clone https://github.com/mkrum/stonefish.git && \
+RUN git clone --branch $BRANCH https://github.com/mkrum/stonefish.git && \
             cd stonefish && \
             pip install -r requirements.txt && \
             pip install -e . && \
