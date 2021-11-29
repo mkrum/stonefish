@@ -1,20 +1,24 @@
 """
-Base Transformer model
+This contains the basic transformer model. It wraps the basic nn.Transformer
+into a larger module that adds additional functionality.
 """
 import math
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 
-from stonefish.rep import MoveToken, BoardToken, BoardRep, MoveRep
 
+def get_mask(data, padding_value=-1):
+    """
+    Computes the mask for the data.
 
-def get_mask(data):
-    mask = data == -1
+    Here, we assume that every item with a value of padding_value is a mask. It
+    then returns a boolean vector of all of the instances of padding_value.
+    """
+    mask = data == padding_value
     return mask.to(data.device)
 
 
@@ -45,12 +49,13 @@ def positionalencoding1d(d_model, length):
 
 class BaseModel(nn.Module):
     """
-    A transformer model that is as vanilla as the come. Using the exact
-    defaults from the pytorch transfomer class.
+    A very vanilla transformer model.
 
-    Using a learned positional encoding. Was originally going to try some
-    clever 1d -> 2d mapping but since we have a fixed size input, thought it
-    would be easier just to optimize the encoding as well.
+    This BaseModel wraps the nn.transformer. This class acts as an
+    autoregressive model over the target conditioned on the state. This means
+    that if we pass in a source of N tokens and a target of M tokens, it will
+    return M log-probabilities, corresponding to the probability of generating
+    the t+1th token in the state given the 1:t+1 tokens.
     """
 
     def __init__(
@@ -72,7 +77,7 @@ class BaseModel(nn.Module):
         self.board_embed = nn.Embedding(input_rep.width(), 8)
         self.move_embed = nn.Embedding(output_rep.width(), 8)
 
-        self.pe = positionalencoding1d(emb_dim, 10).to(self.device)
+        self.pe = positionalencoding1d(emb_dim, 1024).to(self.device)
 
         self.transformer = nn.Transformer(
             batch_first=True,
@@ -82,10 +87,6 @@ class BaseModel(nn.Module):
             dropout=0.0,
         )
 
-        for p in self.transformer.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_uniform_(p)
-
         self.to_emb_board = nn.Sequential(nn.Linear(8, emb_dim))
 
         self.to_emb_move = nn.Sequential(nn.Linear(8, emb_dim))
@@ -94,9 +95,14 @@ class BaseModel(nn.Module):
             nn.Linear(emb_dim, output_rep.width()), nn.LogSoftmax(dim=-1)
         )
 
+        for p in self.transformer.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
         self.start_token = torch.tensor([start_id]).view(1, 1)
 
     def _encode_position(self, data):
+        """ Adds a positional encoding to a tensor """
 
         if self.pe.device != data.device:
             self.pe = self.pe.to(data.device)
@@ -104,18 +110,36 @@ class BaseModel(nn.Module):
         return data + self.pe[: data.shape[1]]
 
     def _state_embed(self, state):
+        """
+        Converts the raw state a dense representation.
+
+        Converts the long integer tensor first into the embedding, then
+        projects that into a larger dense vector, and then encodes the position.
+        """
         state = state.to(self.device)
         embed_state = self.to_emb_board(self.board_embed(state))
         pos_embed_state = self._encode_position(embed_state)
         return pos_embed_state
 
     def _action_embed(self, action):
+        """
+        Converts the raw actions into a dense representation
+
+        Converts the long integer tensor first into the embedding, then
+        projects that into a larger dense vector, and then encodes the position.
+        """
         action = action.to(self.device)
         tgt_embed = self.to_emb_move(self.move_embed(action))
         pos_tgt_embed = self._encode_position(tgt_embed)
         return pos_tgt_embed
 
     def _transformer_pass(self, src, tgt, src_padding_mask, tgt_padding_mask):
+        """
+        Single forward pass of the transformer.
+
+        Passes the source tensor, src, and the target tensor, tgt, through the
+        transformer to compute the output representation.
+        """
 
         tgt_mask = self.transformer.generate_square_subsequent_mask(tgt.shape[1]).to(
             self.device
@@ -131,19 +155,23 @@ class BaseModel(nn.Module):
         return out
 
     def forward(self, state, action):
+        """
+        Returns the *shifted* logits for generating the action.
+        """
         mask = get_mask(state)
         tgt_mask = get_mask(action)
 
-        pos_embed_state = self._state_embed(state)
-        tgt_embed = self._action_embed(action)
+        pos_embed_state = self._state_embed(~mask * state)
+        tgt_embed = self._action_embed(~tgt_mask * action)
         out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
         logits = self.to_dist(out)
         return logits[:, :-1, :]
 
     def _inference(self, state, max_len, action_sel):
+        """ Underlying inference function """
         mask = get_mask(state)
 
-        pos_embed_state = self._state_embed(state)
+        pos_embed_state = self._state_embed(~mask * state)
 
         start_token = self.start_token.repeat(state.shape[0], 1)
         tokens = start_token
@@ -166,6 +194,8 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def inference(self, state, max_len):
+        """ Returns the most likely actions for the given states """
+
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
 
@@ -173,6 +203,8 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def sample(self, state, max_len):
+        """ Samples an action via the distribution """
+
         def sample_action_sel(logits):
             return Categorical(logits=logits).sample().view(-1, 1)
 

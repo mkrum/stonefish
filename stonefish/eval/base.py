@@ -18,9 +18,14 @@ def eval_model(model, datal, train_fn, max_batch=20):
 
     for (batch_idx, (s, a)) in enumerate(datal):
         model.eval()
-        infer = model.inference(s, 2)
+
+        infer = model.inference(s, a.shape[1] - 1)
         infer = torch.flatten(infer[:, 1:])
+
         labels = torch.flatten(a[:, 1:]).to(infer.device)
+
+        infer = infer[labels != -1]
+        labels = labels[labels != -1]
 
         correct += torch.sum((infer == labels).float())
         total += infer.shape[0]

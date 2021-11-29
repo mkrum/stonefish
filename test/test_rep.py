@@ -66,7 +66,6 @@ def test_move():
 
 
 def test_language():
-
     from transformers import AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")

@@ -12,8 +12,8 @@ def test_dataset():
     assert isinstance(move_tensor, torch.LongTensor)
 
     # Check the shape
-    assert board_tensor.shape == torch.Size([74])
-    assert move_tensor.shape == torch.Size([2])
+    assert board_tensor.shape == torch.Size([75])
+    assert move_tensor.shape == torch.Size([3])
 
 
 def test_in_dataloader():
@@ -26,8 +26,8 @@ def test_in_dataloader():
     assert isinstance(move_tensor, torch.LongTensor)
 
     # Check the shape
-    assert board_tensor.shape == torch.Size([8, 74])
-    assert move_tensor.shape == torch.Size([8, 2])
+    assert board_tensor.shape == torch.Size([8, 75])
+    assert move_tensor.shape == torch.Size([8, 3])
 
 
 def test_dataset():

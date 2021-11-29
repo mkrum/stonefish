@@ -15,7 +15,9 @@ class EnumRep:
     Manages a representation that maps a list of strings to unique integer
     values.
 
-    >>> class MyEnumRep(EnumRep): _str_to_int = {"a": 0}; _int_to_str = {0: "a"}
+    >>> class MyEnumRep(EnumRep):
+        _str_to_int = {"a": 0};
+        _int_to_str = {0: "a"}
     >>> x = MyEnumRep.from_str('a')
     >>> x.to_str()
     "a"
@@ -297,18 +299,19 @@ class MoveRep(TupleEnum):
     Move.from_uci('e2e4')
     """
 
-    length = 2
+    length = 3
     token_type = MoveToken
 
     def __str__(self):
-        return self._values[0].to_str() + self._values[1].to_str()
+        return self._values[1].to_str() + self._values[2].to_str()
 
     @classmethod
     def from_str(cls, str_value: str):
         # I think this is valid? Might be missing some weird edge case
+        start_token = cls.token_type.from_str("<start>")
         from_str = cls.token_type.from_str(str_value[:2])
         to_str = cls.token_type.from_str(str_value[2:])
-        return cls([from_str, to_str])
+        return cls([start_token, from_str, to_str])
 
     @classmethod
     def from_uci(cls, uci_value):
@@ -338,13 +341,14 @@ class BoardRep(TupleEnum):
     chess board. Allows for a conversion to and from python-chess boards, and FEN
     notation. This representation is positional, meaning each index has a unique
     interpretation:
-        1) The first 0-63 items in the tuple represent all of the squares on
+        0) A start token
+        1) The first 1-64 items in the tuple represent all of the squares on
     the board
-        2) 64 is the team to move
-        3) 65,66,67,68,69 are the castling rights
-        4) 70,71 is the half move clock, represented as individual digits (i.e.
+        2) 65 is the team to move
+        3) 66-70 are the castling rights
+        4) 71,72 is the half move clock, represented as individual digits (i.e.
         60 -> '6', '0', 1 -> '0', '1')
-        5) 72,73,74 is the full move number, represented as individual digits (i.e.
+        5) 73,74,75 is the full move number, represented as individual digits (i.e.
         123 -> '1', '2', '3')
     >>> board = ut.randomize_board()
     >>> print(board)
@@ -384,13 +388,13 @@ class BoardRep(TupleEnum):
     'r1bq1bnr/p1p2pp1/3kp1Np/1Q1p4/1nP5/8/PP1PPPPP/RNB1KB1R w KQ - 3 9'
     """
 
-    length = 74
+    length = 75
     token_type = BoardToken
 
     @classmethod
     def from_board(cls, board):
         """Initializes from a chess.Board object"""
-        builder = []
+        builder = ["<start>"]
 
         # Get all the pieces/en passant
         for square in chess.SQUARES_180:
@@ -451,7 +455,7 @@ class BoardRep(TupleEnum):
         str_values = self.to_str_list()
 
         # Place the pieces, load en-passant
-        piece_squares = str_values[:64]
+        piece_squares = str_values[1:65]
         for (i, square) in enumerate(chess.SQUARES_180):
 
             piece_symbol = piece_squares[i]
@@ -465,7 +469,7 @@ class BoardRep(TupleEnum):
                 board._set_piece_at(square, piece.piece_type, piece.color)
 
         # Get the current turn
-        to_move = str_values[64]
+        to_move = str_values[65]
         if to_move == "w":
             board.turn = chess.WHITE
         else:
@@ -473,15 +477,15 @@ class BoardRep(TupleEnum):
 
         # Get the castling rights
         castling_fen = ""
-        for flag in str_values[65:69]:
+        for flag in str_values[66:70]:
             if "!" not in flag:
                 castling_fen += flag
 
         board.set_castling_fen(castling_fen)
 
         # Get the clocks
-        board.halfmove_clock = int("".join(str_values[69:71]))
-        board.fullmove_number = int("".join(str_values[71:]))
+        board.halfmove_clock = int("".join(str_values[70:72]))
+        board.fullmove_number = int("".join(str_values[72:]))
         return board
 
     @classmethod
@@ -544,6 +548,11 @@ def _tokenizer_to_int_list(self):
     return self._values
 
 
+@classmethod
+def _tokenizer_width(self):
+    return self.tokenizer.vocab_size
+
+
 def create_tokenizer_rep(name, tokenizer):
 
     TokenizerRep = type(
@@ -559,6 +568,7 @@ def create_tokenizer_rep(name, tokenizer):
             "to_str_list": _tokenizer_to_str_list,
             "from_int_list": _tokenizer_from_int_list,
             "to_int_list": _tokenizer_to_int_list,
+            "width": _tokenizer_width,
         },
     )
 
