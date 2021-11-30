@@ -7,9 +7,6 @@
 |____/ |_| \___/|_| \_|_____|_|   |___|____/|_| |_|
 ```
 
-# About
-This repo contains code used for 
-
 # Quickstart
 ```
 docker run -it mkrum/stonefish python -m stonefish.train configs/ttt.yml
