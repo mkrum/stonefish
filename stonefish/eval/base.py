@@ -20,15 +20,15 @@ def eval_model(model, datal, train_fn, max_batch=20):
         model.eval()
 
         infer = model.inference(s, a.shape[1] - 1)
-        infer = torch.flatten(infer[:, 1:])
+        flat_infer = torch.flatten(infer[:, 1:])
 
         labels = torch.flatten(a[:, 1:]).to(infer.device)
 
-        infer = infer[labels != -1]
+        flat_infer = flat_infer[labels != -1]
         labels = labels[labels != -1]
 
-        correct += torch.sum((infer == labels).float())
-        total += infer.shape[0]
+        correct += torch.sum((flat_infer == labels).float())
+        total += flat_infer.shape[0]
 
         with torch.no_grad():
             loss = train_fn(model, s, a)
@@ -36,6 +36,14 @@ def eval_model(model, datal, train_fn, max_batch=20):
         losses.append(loss.item())
 
         if batch_idx == max_batch:
+
+            for i in range(16):
+                example = s[i]
+                example = example[example != -1]
+                print(model.input_rep.from_tensor(example).to_str())
+                print(model.output_rep.from_tensor(infer[i]).to_str())
+                print()
+
             break
 
     acc = correct / total

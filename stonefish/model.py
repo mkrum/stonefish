@@ -102,7 +102,7 @@ class BaseModel(nn.Module):
         self.start_token = torch.tensor([start_id]).view(1, 1)
 
     def _encode_position(self, data):
-        """ Adds a positional encoding to a tensor """
+        """Adds a positional encoding to a tensor"""
 
         if self.pe.device != data.device:
             self.pe = self.pe.to(data.device)
@@ -158,6 +158,9 @@ class BaseModel(nn.Module):
         """
         Returns the *shifted* logits for generating the action.
         """
+        state = state.to(self.device)
+        action = action.to(self.device)
+
         mask = get_mask(state)
         tgt_mask = get_mask(action)
 
@@ -168,17 +171,19 @@ class BaseModel(nn.Module):
         return logits[:, :-1, :]
 
     def _inference(self, state, max_len, action_sel):
-        """ Underlying inference function """
+        """Underlying inference function"""
+        state = state.to(self.device)
         mask = get_mask(state)
 
         pos_embed_state = self._state_embed(~mask * state)
 
         start_token = self.start_token.repeat(state.shape[0], 1)
-        tokens = start_token
+        tokens = start_token.to(self.device)
 
         for i in range(max_len):
             decode = self._action_embed(tokens)
             tgt_mask = torch.zeros(decode.shape[0], decode.shape[1]).bool()
+            tgt_mask = tgt_mask.to(self.device)
 
             out = self._transformer_pass(pos_embed_state, decode, mask, tgt_mask)
 
@@ -194,7 +199,7 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def inference(self, state, max_len):
-        """ Returns the most likely actions for the given states """
+        """Returns the most likely actions for the given states"""
 
         def max_action_sel(logits):
             return torch.argmax(logits, dim=1).view(-1, 1)
@@ -203,7 +208,7 @@ class BaseModel(nn.Module):
 
     @torch.no_grad()
     def sample(self, state, max_len):
-        """ Samples an action via the distribution """
+        """Samples an action via the distribution"""
 
         def sample_action_sel(logits):
             return Categorical(logits=logits).sample().view(-1, 1)

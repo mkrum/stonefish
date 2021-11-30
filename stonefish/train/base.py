@@ -68,6 +68,7 @@ class TrainingContext:
     train_dl: Any
     test_dl: Any
     epochs: int = 1000
+    eval_freq: int = 10000
 
     def __call__(self, model, opt):
 
@@ -83,8 +84,13 @@ class TrainingContext:
                 loss.backward()
                 opt.step()
 
-                Logger.loss(model, opt, batch_idx, loss.item())
+                Logger.loss(model, opt, batch_idx, len(self.train_dl), loss.item())
 
-        out = self.eval_fn(model, test_data, train_fn)
-        Logger.test_output(*out)
-        Logger.save_checkpoint(model, opt)
+                if batch_idx % self.eval_freq == 0 and batch_idx > 0:
+                    out = self.eval_fn(model, self.test_dl, self.train_fn)
+                    Logger.test_output(*out)
+                    Logger.save_checkpoint(model, opt)
+
+            out = self.eval_fn(model, self.test_dl, self.train_fn)
+            Logger.test_output(*out)
+            Logger.save_checkpoint(model, opt)

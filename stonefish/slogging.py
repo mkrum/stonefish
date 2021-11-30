@@ -46,13 +46,15 @@ class Logger:
         cls._losses = deque(maxlen=1000)
 
     @classmethod
-    def loss(cls, model, opt, batch_idx, loss):
+    def loss(cls, model, opt, batch_idx, total, loss):
         cls._losses.append(loss)
 
         cls.log_file.write(f"TRAIN {cls._epoch_num} {batch_idx} {time.time()} {loss}\n")
 
         if batch_idx > 0 and batch_idx % cls.log_freq == 0:
-            print(f"({cls._epoch_num}/{batch_idx}) Loss (Avg): {np.mean(cls._losses)}")
+            print(
+                f"({cls._epoch_num} {batch_idx}/{total}) Loss (Avg): {np.mean(cls._losses)}"
+            )
 
         if batch_idx > 0 and batch_idx % cls.checkpoint_freq == 0:
             cls.save_checkpoint(model, opt)

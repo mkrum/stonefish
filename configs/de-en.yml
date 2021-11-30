@@ -1,5 +1,5 @@
 
-input_rep: !BertBaseCase
+input_rep: !GermanBertBaseCase
 output_rep: !BertBaseCase
 
 logging: !Logger
@@ -16,14 +16,14 @@ opt: !Adam
     eps: !!float 1e-9
 
 train_dl: !DataLoader
-    dataset: !CommonGen
+    dataset: !DeEn
         split: "train"
-    batch_size: 512
+    batch_size: 32
     shuffle: True
     drop_last: True
 
 test_dl: !DataLoader
-    dataset: !CommonGen
+    dataset: !DeEn
         split: "validation"
     batch_size: 128
     shuffle: True
