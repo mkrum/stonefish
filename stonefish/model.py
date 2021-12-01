@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
+from transformers import AutoModel, GPT2LMHeadModel
 
 
 def get_mask(data, padding_value=-1):
@@ -214,3 +215,43 @@ class BaseModel(nn.Module):
             return Categorical(logits=logits).sample().view(-1, 1)
 
         return self._inference(state, max_len, sample_action_sel)
+
+
+class GPTModel(nn.Module):
+    def __init__(self, device, tokenizer, model_name):
+        super().__init__()
+        self.tokenizer = tokenizer
+
+        self.device = device
+
+        self.hidden_size = 1024
+        self.output_size = 50257
+
+        self.model = GPT2LMHeadModel.from_pretrained(model_name).to(device)
+
+    def forward(self, state):
+        state = state.to(self.device)
+
+        mask = get_mask(state)
+        out = self.model(~mask * state)
+        return out.logits
+
+    @torch.no_grad()
+    def generate(self, primer: str, max_length=50, temp=0.75):
+        """
+        I added the standard tempurature paramter to help control the generation
+        diversity. 1.0 -> no tempurature, < 1.0 -> less diverse (closer to argmax),
+        > 1.0 -> more diverse
+        """
+        gen = primer
+        next_value = ""
+        t = 0
+        while next_value != "<|endoftext|>" and t < max_length:
+            inp = torch.LongTensor(self.tokenizer.encode(gen)).cuda()
+            inp = inp.unsqueeze(0)
+            out = self.forward(inp)[0, -1] / temp
+            dist = Categorical(logits=out)
+            next_value = self.tokenizer.decode(dist.sample())
+            gen += next_value
+            t += 1
+        return gen

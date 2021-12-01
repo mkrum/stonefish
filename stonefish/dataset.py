@@ -19,6 +19,10 @@ def default_collate_fn(batch):
     return source, target
 
 
+def single_default_collate_fn(batch):
+    return pad_sequence(batch, batch_first=True, padding_value=-1)
+
+
 class ChessData(Dataset):
     def __init__(self, path):
         super().__init__()
