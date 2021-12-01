@@ -31,15 +31,15 @@ class GPTTrainingContext:
     train_dl: Any
     test_dl: Any
     epochs: int = 1000
-    eval_freq: int = 10
+    eval_freq: int = 1000
 
     def __call__(self, model, opt):
 
         for epoch in range(self.epochs):
             Logger.epoch()
-            # out = self.eval_fn(model, self.test_dl, self.train_fn)
-            # Logger.test_output(*out)
-            # Logger.save_checkpoint(model, opt)
+            out = self.eval_fn(model, self.test_dl, self.train_fn)
+            Logger.test_output(*out)
+            Logger.save_checkpoint(model, opt)
 
             for (batch_idx, state) in enumerate(self.train_dl):
                 opt.zero_grad()
@@ -50,10 +50,9 @@ class GPTTrainingContext:
                 Logger.loss(model, opt, batch_idx, len(self.train_dl), loss.item())
 
                 if batch_idx % self.eval_freq == 0 and batch_idx > 0:
-                    print(model.generate("<|endoftext|>"))
-                    # out = self.eval_fn(model, self.test_dl, self.train_fn)
-                    # Logger.test_output(*out)
-                    # Logger.save_checkpoint(model, opt)
+                    out = self.eval_fn(model, self.test_dl, self.train_fn)
+                    Logger.test_output(*out)
+                    Logger.save_checkpoint(model, opt)
 
             out = self.eval_fn(model, self.test_dl, self.train_fn)
             Logger.test_output(*out)
@@ -72,7 +71,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    Logger.init("/tmp", "test.txt", True, log_freq=2)
+    Logger.init("/tmp", "test.txt", True, log_freq=10)
 
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
 
@@ -100,10 +99,9 @@ if __name__ == "__main__":
     )
 
     def fake_eval(model, test_dl, train_fn):
-        import pdb
-
-        pdb.set_trace()
-        return ()
+        for _ in range(10):
+            print(model.generate("<|endoftext|>"))
+        return 0.0, 0.0
 
     ctx = GPTTrainingContext(fake_eval, compute_loss, train_dl, test_dl)
     ctx(model, opt)
