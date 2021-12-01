@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 
 from stonefish.slogging import Logger
+from datasets import load_metric
 
 
 def compute_loss(model, state):
@@ -31,7 +32,7 @@ class GPTTrainingContext:
     train_dl: Any
     test_dl: Any
     epochs: int = 1000
-    eval_freq: int = 1000
+    eval_freq: int = 10000
 
     def __call__(self, model, opt):
 
@@ -61,10 +62,10 @@ class GPTTrainingContext:
 
 if __name__ == "__main__":
 
-    from stonefish.dataset import single_default_collate_fn
+    from stonefish.dataset import single_default_collate_fn, default_collate_fn
     from transformers import GPT2TokenizerFast
     from stonefish.model import GPTModel
-    from stonefish.language import SingleCommonGen
+    from stonefish.language import SingleCommonGen, CommonGen, CommonGenEval
     from stonefish.rep import create_tokenizer_rep
     import torch.optim as opt
     from torch.utils.data import DataLoader
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     opt = opt.Adam(model.parameters(), lr=5e-5)
 
     train_dataset = SingleCommonGen(GPTTokenizer, "train")
-    test_dataset = SingleCommonGen(GPTTokenizer, "test")
+    test_dataset = CommonGenEval(GPTTokenizer)
 
     train_dl = DataLoader(
         train_dataset,
@@ -92,15 +93,31 @@ if __name__ == "__main__":
     )
     test_dl = DataLoader(
         test_dataset,
-        batch_size=4,
+        batch_size=1,
         drop_last=True,
         shuffle=True,
-        collate_fn=single_default_collate_fn,
+        collate_fn=CommonGenEval.collate_fn,
     )
 
     def fake_eval(model, test_dl, train_fn):
-        for _ in range(10):
-            print(model.generate("<|endoftext|>"))
+
+        metric = load_metric("bleu", max_order=4)
+
+        step = 0
+        for (s, t) in test_dl:
+            out = model.inference(s)
+            out_str = model.tokenizer.decode(out[0, s.shape[1] + 1 :])
+            out_str = out_str.split("<|endoftext|>")[0]
+
+            metric.add_batch(
+                predictions=[out_str.split()], references=[[t_.split() for t_ in t[0]]]
+            )
+
+            step += 1
+            if step > 100:
+                print(metric.compute())
+                break
+
         return 0.0, 0.0
 
     ctx = GPTTrainingContext(fake_eval, compute_loss, train_dl, test_dl)

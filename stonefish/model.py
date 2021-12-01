@@ -238,11 +238,6 @@ class GPTModel(nn.Module):
 
     @torch.no_grad()
     def generate(self, primer: str, max_length=50, temp=0.75):
-        """
-        I added the standard tempurature paramter to help control the generation
-        diversity. 1.0 -> no tempurature, < 1.0 -> less diverse (closer to argmax),
-        > 1.0 -> more diverse
-        """
         gen = primer
         next_value = ""
         t = 0
@@ -255,3 +250,14 @@ class GPTModel(nn.Module):
             gen += next_value
             t += 1
         return gen
+
+    @torch.no_grad()
+    def inference(self, tensor, max_length=50, temp=0.75):
+        t = 0
+        while t < max_length:
+            out = self.forward(tensor)[:, -1] / temp
+            dist = Categorical(logits=out)
+            next_value = dist.sample().to(tensor.device)
+            tensor = torch.cat([tensor, next_value.unsqueeze(0)], dim=-1)
+            t += 1
+        return tensor

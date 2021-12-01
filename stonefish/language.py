@@ -7,25 +7,59 @@ from stonefish.rep import create_tokenizer_rep
 
 
 class CommonGen(Dataset):
-
-    # tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-    # BertBaseCased = create_tokenizer_rep("BertBaseCased", tokenizer)
-
-    def __init__(self, split):
+    def __init__(self, tokenizer, split):
         dataset = load_dataset("common_gen")
         self.dataset = dataset[split]
+        self.tokenizer = tokenizer
 
     def __getitem__(self, idx):
         data = self.dataset[idx]
-        concept = data["concepts"]
-        target = data["target"]
+        concept = ["<|endoftext|>"] + data["concepts"] + ["<|endoftext|>"]
+        target = "<|endoftext|>" + data["target"] + "<|endoftext|>"
 
-        concept = self.BertBaseCased.from_str_list(concept).to_tensor()
-        target = self.BertBaseCased.from_str(target).to_tensor()
+        concept = self.tokenizer.from_str_list(concept).to_tensor()
+        target = self.tokenizer.from_str(target).to_tensor()
         return concept, target
 
     def __len__(self):
         return len(self.dataset)
+
+
+class CommonGenEval(Dataset):
+    def __init__(self, tokenizer):
+        dataset = load_dataset("common_gen")
+        self.tokenizer = tokenizer
+
+        dataset = dataset["validation"]
+
+        self.dataset = {}
+
+        for d in dataset:
+            id_ = d["concept_set_idx"]
+
+            if id_ not in self.dataset.keys():
+                self.dataset[id_] = (d["concepts"], [])
+
+            self.dataset[id_][1].append(d["target"])
+
+    def __getitem__(self, idx):
+        data = self.dataset[idx]
+
+        concepts = data[0]
+
+        starter = "<|endoftext|>" + ", ".join(concepts) + ": "
+        targets = data[1]
+
+        return self.tokenizer.from_str(starter).to_tensor(), targets
+
+    def __len__(self):
+        return len(self.dataset)
+
+    @classmethod
+    def collate_fn(cls, batch):
+        starters, targets = zip(*batch)
+        starters = pad_sequence(starters, batch_first=True, padding_value=-1)
+        return starters, targets
 
 
 class DeEn(Dataset):
