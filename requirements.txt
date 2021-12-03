@@ -7,3 +7,8 @@ pytest-cov
 rich
 matplotlib
 pyyaml
+nltk
+sentencepiece
+absl-py
+rouge_score
+jury

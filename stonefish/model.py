@@ -9,10 +9,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
-from transformers import AutoModel, GPT2LMHeadModel
+from transformers import AutoModel, GPT2LMHeadModel, T5ForConditionalGeneration
 
 
-def get_mask(data, padding_value=-1):
+def get_mask(data, padding_value=-100):
     """
     Computes the mask for the data.
 
@@ -224,15 +224,52 @@ class GPTModel(nn.Module):
 
         self.device = device
 
-        self.hidden_size = 1024
-        self.output_size = 50257
-
         self.model = GPT2LMHeadModel.from_pretrained(model_name).to(device)
 
     def forward(self, state):
         state = state.to(self.device)
 
         mask = get_mask(state)
+        out = self.model(~mask * state)
+        return out.logits
+
+    @torch.no_grad()
+    def generate(self, primer: str, max_length=50, temp=0.75):
+        gen = primer
+        next_value = ""
+        t = 0
+        while next_value != "<|endoftext|>" and t < max_length:
+            inp = torch.LongTensor(self.tokenizer.encode(gen)).cuda()
+            inp = inp.unsqueeze(0)
+            out = self.forward(inp)[0, -1] / temp
+            dist = Categorical(logits=out)
+            next_value = self.tokenizer.decode(dist.sample())
+            gen += next_value
+            t += 1
+        return gen
+
+    @torch.no_grad()
+    def inference(self, tensor, max_length=50, temp=0.75):
+        t = 0
+        while t < max_length:
+            out = self.forward(tensor)[:, -1] / temp
+            dist = Categorical(logits=out)
+            next_value = dist.sample().to(tensor.device)
+            tensor = torch.cat([tensor, next_value.unsqueeze(0)], dim=-1)
+            t += 1
+        return tensor
+
+
+class T5Model(nn.Module):
+    def __init__(self, device, tokenizer, model_name):
+        super().__init__()
+        self.device = device
+        self.tokenizer = tokenizer
+        self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
+
+    def forward(self, state):
+        mask = get_mask(state)
+        state = state.to(self.device)
         out = self.model(~mask * state)
         return out.logits
 

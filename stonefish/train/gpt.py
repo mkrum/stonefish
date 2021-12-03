@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from stonefish.slogging import Logger
 from datasets import load_metric
 
+from rich import print
+
 
 def compute_loss(model, state):
     preds = model(state)
@@ -55,10 +57,6 @@ class GPTTrainingContext:
                     Logger.test_output(*out)
                     Logger.save_checkpoint(model, opt)
 
-            out = self.eval_fn(model, self.test_dl, self.train_fn)
-            Logger.test_output(*out)
-            Logger.save_checkpoint(model, opt)
-
 
 if __name__ == "__main__":
 
@@ -74,11 +72,12 @@ if __name__ == "__main__":
 
     Logger.init("/tmp", "test.txt", True, log_freq=10)
 
-    tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+    tokenizer = GPT2TokenizerFast.from_pretrained("gpt2-medium")
 
     GPTTokenizer = create_tokenizer_rep("GPTTokenizer", tokenizer)
 
-    model = GPTModel(device, tokenizer, "gpt2")
+    model = GPTModel(device, tokenizer, "gpt2-medium")
+    model.load_state_dict(torch.load("model_2.pth"))
     opt = opt.Adam(model.parameters(), lr=5e-5)
 
     train_dataset = SingleCommonGen(GPTTokenizer, "train")
@@ -86,7 +85,7 @@ if __name__ == "__main__":
 
     train_dl = DataLoader(
         train_dataset,
-        batch_size=128,
+        batch_size=32,
         drop_last=True,
         shuffle=True,
         collate_fn=single_default_collate_fn,
@@ -101,16 +100,23 @@ if __name__ == "__main__":
 
     def fake_eval(model, test_dl, train_fn):
 
-        metric = load_metric("bleu", max_order=4)
+        metric = load_metric("bleu")
 
         step = 0
         for (s, t) in test_dl:
             out = model.inference(s)
-            out_str = model.tokenizer.decode(out[0, s.shape[1] + 1 :])
+            in_str = model.tokenizer.decode(out[0, 1 : s.shape[1]])
+            out_str = model.tokenizer.decode(out[0, s.shape[1] :])
             out_str = out_str.split("<|endoftext|>")[0]
 
+            print(model.tokenizer.decode(out[0]))
+
+            if step <= 10:
+                print(f"[red]{in_str}[blue]{out_str}")
+
             metric.add_batch(
-                predictions=[out_str.split()], references=[[t_.split() for t_ in t[0]]]
+                predictions=[model.tokenizer.encode(out_str)],
+                references=[[model.tokenizer.encode(t_) for t_ in t[0]]],
             )
 
             step += 1

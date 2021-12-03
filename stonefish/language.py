@@ -14,11 +14,11 @@ class CommonGen(Dataset):
 
     def __getitem__(self, idx):
         data = self.dataset[idx]
-        concept = ["<|endoftext|>"] + data["concepts"] + ["<|endoftext|>"]
-        target = "<|endoftext|>" + data["target"] + "<|endoftext|>"
+        concept = " ".join(data["concepts"])
+        target = data["target"]
 
-        concept = self.tokenizer.from_str_list(concept).to_tensor()
-        target = self.tokenizer.from_str(target).to_tensor()
+        concept = self.tokenizer.encode(concept, return_tensors="pt")[0]
+        target = self.tokenizer.encode(target, return_tensors="pt")[0]
         return concept, target
 
     def __len__(self):
@@ -44,13 +44,7 @@ class CommonGenEval(Dataset):
 
     def __getitem__(self, idx):
         data = self.dataset[idx]
-
-        concepts = data[0]
-
-        starter = "<|endoftext|>" + ", ".join(concepts) + ": "
-        targets = data[1]
-
-        return self.tokenizer.from_str(starter).to_tensor(), targets
+        return data[0], data[1]
 
     def __len__(self):
         return len(self.dataset)

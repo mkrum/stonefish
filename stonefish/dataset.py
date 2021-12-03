@@ -13,14 +13,14 @@ from torch.nn.utils.rnn import pad_sequence
 def default_collate_fn(batch):
     source, target = zip(*batch)
 
-    source = pad_sequence(source, batch_first=True, padding_value=-1)
-    target = pad_sequence(target, batch_first=True, padding_value=-1)
+    source = pad_sequence(source, batch_first=True, padding_value=-100)
+    target = pad_sequence(target, batch_first=True, padding_value=-100)
 
     return source, target
 
 
 def single_default_collate_fn(batch):
-    return pad_sequence(batch, batch_first=True, padding_value=-1)
+    return pad_sequence(batch, batch_first=True, padding_value=-100)
 
 
 class ChessData(Dataset):
