@@ -177,6 +177,7 @@ if __name__ == "__main__":
 
     tokenizer = T5TokenizerFast.from_pretrained("t5-small")
     model = T5ForConditionalGeneration.from_pretrained("t5-small").to(device)
+    model.load_state_dict(torch.load("base.pth"))
 
     opt = opt.Adam(model.parameters(), lr=5e-5)
 
@@ -204,5 +205,7 @@ if __name__ == "__main__":
         collate_fn=collate_fn,
     )
 
-    ctx = TrainingContext(write_output, compute_loss, train_dl, test_dl)
-    ctx(model, opt, device)
+    model.lm_head.load_state_dict(torch.load("rl_head_8.4.pth"))
+    write_output(model, test_dl, compute_loss)
+    import time
+    time.sleep(1000)

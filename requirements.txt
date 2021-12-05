@@ -12,3 +12,4 @@ sentencepiece
 absl-py
 rouge_score
 jury
+sacrebleu

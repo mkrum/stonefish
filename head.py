@@ -75,6 +75,7 @@ class TrainingContext:
             start = time.time()
             out = self.eval_fn(model, self.test_dl, self.train_fn)
             end= time.time()
+            print(end - start)
             Logger.test_output(*out)
             Logger.save_checkpoint(model, opt)
 
@@ -117,8 +118,8 @@ def run_eval(state_path, generated_path, examples_path):
     generated = [grouped_generated[u] for u in uniq_states] 
     examples = [grouped_examples[u] for u in uniq_states] 
     scorer = Jury()
-    out = scorer(predictions=generated, references=examples)
-    print(out)
+    print("Running...")
+    print(scorer(predictions=generated, references=examples))
 
 def write_output(model, test_dl, train_fn):
     
@@ -178,8 +179,20 @@ if __name__ == "__main__":
     tokenizer = T5TokenizerFast.from_pretrained("t5-small")
     model = T5ForConditionalGeneration.from_pretrained("t5-small").to(device)
 
-    opt = opt.Adam(model.parameters(), lr=5e-5)
+    import torch.nn as nn
+    import copy
 
+    #model.lm_head = nn.Sequential(
+    #        nn.Linear(512, 1024),
+    #        nn.Tanh(),
+    #        nn.Linear(1024, 512),
+    #        nn.Tanh(),
+    #        copy.deepcopy(model.lm_head),
+    #).to(device)
+    model.lm_head.requires_grad = False
+
+    opt = opt.Adam(model.parameters(), lr=5e-5)
+    
     dataset = load_dataset("common_gen")
 
     def collate_fn(batch):

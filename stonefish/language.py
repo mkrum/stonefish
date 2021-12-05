@@ -26,11 +26,14 @@ class CommonGen(Dataset):
 
 
 class CommonGenEval(Dataset):
-    def __init__(self, tokenizer):
-        dataset = load_dataset("common_gen")
-        self.tokenizer = tokenizer
 
-        dataset = dataset["validation"]
+    tokenizer = None
+
+    def __init__(self, split, tokenizer):
+        dataset = load_dataset("common_gen")
+        CommonGenEval.tokenizer = tokenizer
+
+        dataset = dataset[split]
 
         self.dataset = {}
 
@@ -38,13 +41,13 @@ class CommonGenEval(Dataset):
             id_ = d["concept_set_idx"]
 
             if id_ not in self.dataset.keys():
-                self.dataset[id_] = (d["concepts"], [])
+                self.dataset[id_] = (" ".join(d["concepts"]), [])
 
             self.dataset[id_][1].append(d["target"])
 
     def __getitem__(self, idx):
         data = self.dataset[idx]
-        return data[0], data[1]
+        return data[0], [data[1]]
 
     def __len__(self):
         return len(self.dataset)
@@ -52,21 +55,10 @@ class CommonGenEval(Dataset):
     @classmethod
     def collate_fn(cls, batch):
         starters, targets = zip(*batch)
-        starters = pad_sequence(starters, batch_first=True, padding_value=-1)
-        return starters, targets
+        return cls.tokenizer(list(starters), padding=True, return_tensors="pt"), targets
 
 
 class DeEn(Dataset):
-
-    # english_tokenizer = AutoTokenizer.from_pretrained("bert-base-cased", max_length=256)
-    # german_tokenizer = AutoTokenizer.from_pretrained(
-    #    "bert-base-german-cased", max_length=256
-    # )
-
-    # EnglishBertBaseCased = create_tokenizer_rep(
-    #    "EnglishBertBaseCased", english_tokenizer
-    # )
-    # GermanBertBaseCased = create_tokenizer_rep("GermanBertBaseCased", german_tokenizer)
 
     def __init__(self, split, max_len=256):
         dataset = load_dataset("wmt18", "de-en")
