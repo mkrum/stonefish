@@ -37,11 +37,11 @@ class TrainingContext:
     epochs: int = 21
     eval_freq: int = 10000
 
-    def __call__(self, model, opt, device):
+    def __call__(self, model, tokenizer, opt, device):
 
         for epoch in range(self.epochs):
             Logger.epoch()
-            out = self.eval_fn(epoch, model, self.test_dl)
+            out = self.eval_fn(epoch, model, tokenizer, self.test_dl)
             Logger.test_output(*out)
 
             Logger.save_checkpoint(model, opt)
@@ -148,12 +148,14 @@ def write_output(epoch, states, generated, examples):
     return (state_file, generated_file, examples_file)
 
 
-def base_eval_fn(epoch, model, test_dl):
+def base_eval_fn(epoch, model, tokenizer, test_dl):
     """
     Writes output, runs evaluation in a seperate process
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    states, generated, examples = get_outputs(model, device, test_dl, num_beams=5)
+    states, generated, examples = get_outputs(
+        model, device, tokenizer, test_dl, num_beams=5
+    )
     files = write_output(epoch, states, generated, examples)
 
     p = mp.Process(target=run_eval, args=(epoch, *files))
@@ -210,4 +212,4 @@ if __name__ == "__main__":
     )
 
     ctx = TrainingContext(base_eval_fn, compute_loss, train_dl, test_dl)
-    ctx(model, opt, device)
+    ctx(model, tokenizer, opt, device)
