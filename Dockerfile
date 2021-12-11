@@ -11,7 +11,6 @@ RUN git clone --branch $BRANCH https://github.com/mkrum/stonefish.git && \
             pip install -e . && \
             cd -
 
-
 WORKDIR /root/stonefish
 
 RUN wget https://www.dropbox.com/s/4xyyhue8u49m7pz/test_5.csv?dl=0 -O ./data/test_5.csv 

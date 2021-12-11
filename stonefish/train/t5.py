@@ -205,7 +205,7 @@ if __name__ == "__main__":
     )
     test_dl = DataLoader(
         dataset["validation"],
-        batch_size=16,
+        batch_size=args.batch_size,
         drop_last=False,
         shuffle=False,
         collate_fn=collate_fn,
