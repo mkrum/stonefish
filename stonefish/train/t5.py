@@ -1,61 +1,30 @@
-import time
-from dataclasses import dataclass
+import os
+import argparse
 from typing import Any
+import multiprocessing as mp
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
+import torch.optim as opt
+from torch.utils.data import DataLoader
+from transformers import T5TokenizerFast, T5ForConditionalGeneration
+from datasets import load_dataset
+from jury import Jury
+from rich import print
 
 from stonefish.slogging import Logger
-from rich import print
-from datasets import load_dataset, load_metric
-import jury
-
-import multiprocessing as mp
 
 
 def compute_loss(model, encoding, target_encoding):
+    """
+    Base loss computation via hugging face API
+    """
     input_ids, attention_mask = encoding.input_ids.to(
         device
     ), encoding.attention_mask.to(device)
     labels = target_encoding.input_ids.to(device)
     return model(input_ids=input_ids, attention_mask=attention_mask, labels=labels).loss
-
-
-METRIC = None #load_metric("meteor")
-
-
-def compute_reward(outputs, target):
-
-    reward = torch.ones(len(outputs), 1)
-    for i in range(len(outputs)):
-        METRIC.add(prediction=outputs[i], reference=target[i])
-        reward[i, 0] = METRIC.compute()["meteor"]
-
-    return reward
-
-
-def pg_loss(model, encoding, target_encoding):
-    input_ids, attention_mask = encoding.input_ids.to(
-        device
-    ), encoding.attention_mask.to(device)
-    labels = target_encoding.input_ids.to(device)
-    outputs = model.generate(
-        input_ids=input_ids, attention_mask=attention_mask, max_length=32
-    )
-
-    generated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-    references = tokenizer.batch_decode(labels, skip_special_tokens=True)
-
-    logits = model(
-        input_ids=input_ids, attention_mask=attention_mask, labels=outputs
-    ).logits
-    logits = F.log_softmax(logits, dim=-1)
-    logits = torch.gather(logits, 2, outputs.unsqueeze(-1)).squeeze(-1)
-    reward = compute_reward(generated, references)
-    print(torch.mean(reward))
-    reward = reward.repeat(1, logits.shape[1]).cuda()
-    loss = -1 * torch.mean(reward * logits * (outputs != 0))
-    return loss
 
 
 @dataclass
@@ -65,17 +34,16 @@ class TrainingContext:
     train_fn: Any
     train_dl: Any
     test_dl: Any
-    epochs: int = 1000
+    epochs: int = 21
     eval_freq: int = 10000
 
     def __call__(self, model, opt, device):
 
         for epoch in range(self.epochs):
             Logger.epoch()
-            start = time.time()
-            out = self.eval_fn(model, self.test_dl, self.train_fn)
-            end= time.time()
+            out = self.eval_fn(epoch, model, self.test_dl)
             Logger.test_output(*out)
+
             Logger.save_checkpoint(model, opt)
 
             for (batch_idx, (encoding, target_encoding)) in enumerate(self.train_dl):
@@ -88,40 +56,42 @@ class TrainingContext:
 
                 Logger.loss(model, opt, batch_idx, len(self.train_dl), loss.item())
 
-                if batch_idx % self.eval_freq == 0 and batch_idx > 0:
-                    out = self.eval_fn(model, self.test_dl, self.train_fn)
-                    Logger.test_output(*out)
-                    Logger.save_checkpoint(model, opt)
-
-        out = self.eval_fn(model, self.test_dl, self.train_fn)
+        out = self.eval_fn(model, self.test_dl)
         Logger.test_output(*out)
         Logger.save_checkpoint(model, opt)
 
-def run_eval(state_path, generated_path, examples_path):
 
-    states = open(state_path, 'r').readlines()
-    generated = open(generated_path, 'r').readlines()
-    examples = open(examples_path, 'r').readlines()
+def run_eval(epoch, state_path, generated_path, examples_path):
+    """
+    Loads data, uses jury to compute the main metrics
+    """
 
-    from jury import Jury
+    states = open(state_path, "r").readlines()
+    generated = open(generated_path, "r").readlines()
+    examples = open(examples_path, "r").readlines()
+
     jury = Jury()
 
     uniq_states = list(set(states))
 
     grouped_generated = {u: [] for u in uniq_states}
-    grouped_examples = {u : [] for u in uniq_states}
+    grouped_examples = {u: [] for u in uniq_states}
     for (i, s) in enumerate(states):
         grouped_generated[s].append(generated[i])
         grouped_examples[s].append(examples[i])
 
-    generated = [grouped_generated[u] for u in uniq_states] 
-    examples = [grouped_examples[u] for u in uniq_states] 
+    generated = [grouped_generated[u] for u in uniq_states]
+    examples = [grouped_examples[u] for u in uniq_states]
     scorer = Jury()
     out = scorer(predictions=generated, references=examples)
+    out["epoch"] = epoch
     print(out)
 
-def write_output(model, test_dl, train_fn):
-    
+
+def get_outputs(model, device, tokenizer, test_dl, do_sample=False, num_beams=None):
+    """
+    Runs inference, collects results into a list
+    """
     states = []
     generated = []
     examples = []
@@ -133,50 +103,85 @@ def write_output(model, test_dl, train_fn):
         labels = targets.input_ids.to(device)
 
         outputs = model.generate(
-            input_ids=input_ids, attention_mask=attention_mask, max_length=32, do_sample=True
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=32,
+            do_sample=do_sample,
+            num_beams=num_beams,
         )
-        
+
         states += tokenizer.batch_decode(input_ids, skip_special_tokens=True)
         generated += tokenizer.batch_decode(outputs, skip_special_tokens=True)
         examples += tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        sample_out = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        sample_in = tokenizer.decode(input_ids[0], skip_special_tokens=True)
+    return states, generated, examples
 
-        print(f"[red]{sample_in} [green]-> [blue]{sample_out}")
 
-    with open('states.txt', 'w') as f:
+def write_output(epoch, states, generated, examples):
+    """
+    Write the model output into text files for evaluation.
+    """
+
+    for i in range(10):
+        print(f"[red]{states[i]} [green]-> [blue]{generated[i]}")
+
+    output_dir = f"{Logger.output_dir}/samples"
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    state_file = f"{output_dir}/states_{epoch}.txt"
+    generated_file = f"{output_dir}/generated_{epoch}.txt"
+    examples_file = f"{output_dir}/examples_{epoch}.txt"
+
+    with open(state_file, "w") as f:
         for i in range(len(generated)):
-            f.write(states[i] + '\n')
+            f.write(states[i] + "\n")
 
-    with open('generated.txt', 'w') as f:
+    with open(generated_file, "w") as f:
         for i in range(len(generated)):
-            f.write(generated[i] + '\n')
+            f.write(generated[i] + "\n")
 
-    with open('examples.txt', 'w') as f:
+    with open(examples_file, "w") as f:
         for i in range(len(generated)):
-            f.write(examples[i] + '\n')
+            f.write(examples[i] + "\n")
 
-    p = mp.Process(target=run_eval, args=("states.txt", "generated.txt", "examples.txt"))
+    return (state_file, generated_file, examples_file)
+
+
+def base_eval_fn(epoch, model, test_dl):
+    """
+    Writes output, runs evaluation in a seperate process
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    states, generated, examples = get_outputs(model, device, test_dl, num_beams=5)
+    files = write_output(epoch, states, generated, examples)
+
+    p = mp.Process(target=run_eval, args=(epoch, *files))
     p.daemon = True
     p.start()
+
     return 0.0, 0.0
 
 
 if __name__ == "__main__":
+    # batch_size=256, #t5-small
+    # batch_size=155, #t5-base
+    # batch_size=16, #t5-large
 
-    from transformers import T5TokenizerFast
-    import torch.optim as opt
-    from torch.utils.data import DataLoader
+    parser = argparse.ArgumentParser()
 
-    from transformers import T5Tokenizer, T5ForConditionalGeneration
+    parser.add_argument("model_type")
+    parser.add_argument("--batch_size", type=int, default=256)
+    args = parser.parse_args()
 
-    Logger.init("/tmp", "test.txt", True, log_freq=10)
+    log_dir = f"/nfs/logs/{args.model_type}"
+    os.makedirs(log_dir, exist_ok=True)
+    Logger.init(log_dir, "test.txt", True, log_freq=10)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = T5TokenizerFast.from_pretrained("t5-small")
-    model = T5ForConditionalGeneration.from_pretrained("t5-small").to(device)
+    tokenizer = T5TokenizerFast.from_pretrained(args.model_type)
+    model = T5ForConditionalGeneration.from_pretrained(args.model_type).to(device)
 
     opt = opt.Adam(model.parameters(), lr=5e-5)
 
@@ -191,18 +196,18 @@ if __name__ == "__main__":
 
     train_dl = DataLoader(
         dataset["train"],
-        batch_size=256,
+        batch_size=args.batch_size,
         drop_last=True,
         shuffle=True,
         collate_fn=collate_fn,
     )
     test_dl = DataLoader(
         dataset["validation"],
-        batch_size=512,
+        batch_size=16,
         drop_last=False,
         shuffle=False,
         collate_fn=collate_fn,
     )
 
-    ctx = TrainingContext(write_output, compute_loss, train_dl, test_dl)
+    ctx = TrainingContext(base_eval_fn, compute_loss, train_dl, test_dl)
     ctx(model, opt, device)
