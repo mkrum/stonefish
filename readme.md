@@ -8,9 +8,24 @@
 ```
 
 # Quickstart
+There are two docker images available mkrum/stonefish (Dockerfile),
+mkrum/stonefish-final (Dockerfile-final). The final version includes the
+t5-large and t5-base models. 
+
+# How To Run
 ```
-docker run -it mkrum/stonefish python -m stonefish.train configs/ttt.yml
+docker run -it --rm mkrum/stonefish python stonefish/train/t5.py t5-base
+--batch_size 155
 ```
+```
+docker run -it --rm mkrum/stonefish python stonefish/train/rl_lm.py t5-base
+<path> 
+```
+
+# About
+There are two main files for review, `stonefish/train/t5.py`, which contains the
+standard fine-tuning code, and `stonefish/train/rl_lm.py`, which contains the rl
+finetuning step.
 
 # Installation
 You can install via pip.
