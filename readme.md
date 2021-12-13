@@ -19,17 +19,17 @@ This code is designed to be run with a V100, but should still be able to run
 locally (albeit restrictively slow).
 
 # How To Run
+For convenience, we have dockerized the code and pushed it to the docker hub. You
+should just be able to run:
 ```
 docker pull mkrum/stonefish
 docker pull mkrum/stonefish-final
 ```
-
-You can try to run the small models as an example:
+You can try to run the small models as an example (Note: this will take awhile
+to run):
 ```
-docker run -it --rm mkrum/stonefish python stonefish/train/t5.py t5-small --batch_size 155
-```
-```
-docker run -it --rm mkrum/stonefish python stonefish/train/rl_lm.py t5-small <path_to_weights> 
+docker run -it --rm -v /tmp/:/nfs/logs mkrum/stonefish python stonefish/train/t5.py t5-small --batch_size 32
+docker run -it --rm -v /tmp/:/nfs/logs mkrum/stonefish python stonefish/train/rl_lm.py t5-small /nfs/logs/t5-small/model_<epoch>.pth
 ```
 You can also install via pip.
 ```
