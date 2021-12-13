@@ -8,28 +8,38 @@
 ```
 
 # Quickstart
-There are two docker images available mkrum/stonefish (Dockerfile),
-mkrum/stonefish-final (Dockerfile-final). The final version includes the
-t5-large and t5-base models. 
+There are two docker images available from the dockerhub mkrum/stonefish (Dockerfile),
+mkrum/stonefish-final (Dockerfile-final). We uploaded our additional data in the
+mkrum/stonefish-final image, including our t5-large and t5-base models. These
+and information about their training data can be found in the `/nfs/` directory.
+We also dockerized the code to run the CommonGen eval. This can be found in the
+`CGEval/` folder.
+
+This code is designed to be run with a V100, but should still be able to run
+locally (albeit restrictively slow).
 
 # How To Run
 ```
-docker run -it --rm mkrum/stonefish python stonefish/train/t5.py t5-base
---batch_size 155
-```
-```
-docker run -it --rm mkrum/stonefish python stonefish/train/rl_lm.py t5-base
-<path> 
+docker pull mkrum/stonefish
+docker pull mkrum/stonefish-final
 ```
 
-# About
-There are two main files for review, `stonefish/train/t5.py`, which contains the
-standard fine-tuning code, and `stonefish/train/rl_lm.py`, which contains the rl
-finetuning step.
-
-# Installation
-You can install via pip.
+You can try to run the small models as an example:
+```
+docker run -it --rm mkrum/stonefish python stonefish/train/t5.py t5-small --batch_size 155
+```
+```
+docker run -it --rm mkrum/stonefish python stonefish/train/rl_lm.py t5-small <path_to_weights> 
+```
+You can also install via pip.
 ```
 pip install -r requirements.txt
 pip install -e .
 ```
+
+# Tip
+There are two main files for review, `stonefish/train/t5.py`, which contains the
+standard fine-tuning code, and `stonefish/train/rl_lm.py`, which contains the rl
+finetuning step. There is a lot of other code in this repository that we didn't
+end up using, so I would recommend starting there and moving outwards.
+
