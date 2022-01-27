@@ -6,7 +6,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from stonefish.rep import MoveToken, MoveRep, BoardRep
-from stonefish.vis import plot_board, square_to_grid, plot_move, mark_move
+from chessplotlib import plot_board, plot_move, mark_move
 from stonefish.slogging import Logger
 
 
@@ -49,40 +49,6 @@ def eval_model(model, datal, train_fn, max_batch=20):
     acc = correct / total
     m_loss = np.mean(losses)
     return acc.item(), m_loss
-
-
-def prob_vis(model, data, N):
-
-    for _ in range(N):
-        state, action = data[np.random.choice(range(len(data)))]
-
-        move = MoveRep.from_tensor(action).to_uci()
-
-        state = state.unsqueeze(0)
-        action = action.unsqueeze(0)
-
-        with torch.no_grad():
-            out = model.forward(state, action)
-
-        act = nn.Softmax(dim=-1)
-        for i in range(2):
-
-            first_logits = out[0, i]
-
-            probs = act(first_logits).numpy()
-
-            prob_grid = np.zeros((8, 8))
-            for (square, p) in zip(MoveToken.valid_str(), probs):
-                x, y = square_to_grid(square)
-                prob_grid[x, y] += p
-
-            fig, ax = plt.subplots(1, 1)
-
-            mark_move(ax, move)
-
-            plot_board(ax, BoardRep.from_tensor(state[0]).to_board(), checkers=False)
-            ax.imshow(prob_grid, vmax=1.0, vmin=0.0, cmap="Reds")
-            plt.show()
 
 
 def move_vis(model, data, N):

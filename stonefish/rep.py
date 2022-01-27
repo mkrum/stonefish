@@ -305,6 +305,9 @@ class MoveRep(TupleEnum):
     def __str__(self):
         return self._values[1].to_str() + self._values[2].to_str()
 
+    def to_str(self):
+        return str(self)
+
     @classmethod
     def from_str(cls, str_value: str):
         # I think this is valid? Might be missing some weird edge case
@@ -511,6 +514,9 @@ class BoardRep(TupleEnum):
 
     def __str__(self):
         return self.to_fen()
+
+    def to_str(self):
+        return str(self)
 
 
 def _tokenizer__init__(self, int_values):

@@ -1,15 +1,9 @@
 torch
 transformers
-datasets
 python-chess
 pytest
 pytest-cov
 rich
 matplotlib
 pyyaml
-nltk
-sentencepiece
-absl-py
-rouge_score
-jury
-sacrebleu
+chessplotlib

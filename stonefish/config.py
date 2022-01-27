@@ -15,7 +15,6 @@ from stonefish.slogging import Logger
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep, create_tokenizer_rep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
-from stonefish.language import CommonGen, DeEn
 
 
 def load_model(config, load=None):
@@ -265,9 +264,6 @@ make_lazy_constructor(TTTData, "TTTData")
 make_lazy_constructor(ChessData, "ChessData")
 make_lazy_constructor(BaseModel, "BaseModel")
 make_lazy_constructor(DataLoader, "DataLoader", {"collate_fn": default_collate_fn})
-make_lazy_constructor(CommonGen, "CommonGen")
-make_lazy_constructor(DeEn, "DeEn")
-make_lazy_constructor(create_tokenizer_rep, "BertBasedCase")
 
 for o in [
     "Adadelta",
@@ -287,15 +283,7 @@ for o in [
 # Logger YAML configuration
 yaml.add_constructor("!Logger", logging_constructor)
 
-tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
-BertBaseCased = create_tokenizer_rep("BertBaseCased", tokenizer)
-
-german_tokenizer = AutoTokenizer.from_pretrained("bert-base-german-cased")
-GermanBertBaseCased = create_tokenizer_rep("GermanBertBaseCased", german_tokenizer)
-
 # Type objects, interpreted as literal type
-make_type_constructor(BertBaseCased, "BertBaseCase")
-make_type_constructor(GermanBertBaseCased, "GermanBertBaseCase")
 make_type_constructor(TTTBoardRep, "TTTBoardRep")
 make_type_constructor(TTTMoveRep, "TTTMoveRep")
 make_type_constructor(BoardRep, "BoardRep")

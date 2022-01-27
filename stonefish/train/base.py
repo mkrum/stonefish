@@ -24,42 +24,6 @@ def train_step(model, state, output):
     return loss
 
 
-def pg_step(model, state, output):
-
-    with torch.no_grad():
-        samples = model.sample(state).detach()
-
-    output = output.to(samples.device)
-    log_probs = model(state, samples)
-
-    log_probs = torch.gather(log_probs, 2, samples.unsqueeze(-1))
-
-    matches = samples == output
-    matches = matches.flatten()
-
-    reward = 1.0 * matches.float() + -1.0 * (~matches).float()
-
-    loss = -1 * torch.mean(reward.detach() * log_probs.flatten())
-    return loss
-
-
-def sample_pg_step(model, state, output, N=10):
-    model.train()
-
-    loss = torch.zeros(1)
-
-    for _ in range(N):
-        out = pg_step(model, state, output)
-        loss = loss.to(out.device)
-        loss += out
-
-    return loss / N
-
-
-def joint_step(model, state, output):
-    return sample_pg_step(model, state, output, N=10) + train_step(model, state, output)
-
-
 @dataclass
 class TrainingContext:
 

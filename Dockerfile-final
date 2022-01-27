@@ -1,6 +1,0 @@
-FROM mkrum/stonefish
-
-ADD ./t5-large /nfs/t5-large
-ADD ./t5-base /nfs/t5-base
-ADD ./t5-large-rl /nfs/t5-large-rl
-ADD ./t5-base-rl /nfs/t5-base-rl
