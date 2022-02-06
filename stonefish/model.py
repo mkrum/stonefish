@@ -25,6 +25,8 @@ def get_mask(data, padding_value=-100):
 
 def positionalencoding1d(d_model, length):
     """
+    This is from: https://github.com/wzlxjtu/PositionalEncoding2D/blob/master/positionalembedding2d.py
+
     :param d_model: dimension of the model
     :param length: length of positions
     :return: length*d_model position matrix
@@ -155,7 +157,7 @@ class BaseModel(nn.Module):
         )
         return out
 
-    def forward(self, state, action):
+    def forward(self, state, action, return_hidden=False):
         """
         Returns the *shifted* logits for generating the action.
         """
@@ -169,7 +171,31 @@ class BaseModel(nn.Module):
         tgt_embed = self._action_embed(~tgt_mask * action)
         out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
         logits = self.to_dist(out)
-        return logits[:, :-1, :]
+
+        logits = logits[:, :-1, :]
+
+        if return_hidden:
+            return out, logits
+
+        return logits
+
+
+    def forward_with_hidden(self, state, action):
+        """
+        Returns the *shifted* logits for generating the action.
+        """
+        state = state.to(self.device)
+        action = action.to(self.device)
+
+        mask = get_mask(state)
+        tgt_mask = get_mask(action)
+
+        pos_embed_state = self._state_embed(~mask * state)
+        tgt_embed = self._action_embed(~tgt_mask * action)
+        out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
+        logits = self.to_dist(out)
+        return out, logits[:, :-1, :]
+
 
     def _inference(self, state, max_len, action_sel):
         """Underlying inference function"""

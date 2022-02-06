@@ -32,7 +32,7 @@ class TrainingContext:
     train_dl: Any
     test_dl: Any
     epochs: int = 1000
-    eval_freq: int = 10000
+    eval_freq: int = 5000
 
     def __call__(self, model, opt):
 

@@ -7,3 +7,4 @@ rich
 matplotlib
 pyyaml
 chessplotlib
+open_spiel
