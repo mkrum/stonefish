@@ -18,10 +18,10 @@ function populate_fen_queue(path::String)
 
     file = open(path, "r")
     lines = readlines(file)
-    non_empty_lines = collect(filter(x -> length(x) > 1, lines))
-    fen_lines = collect(filter(x -> x[1] == '1', non_empty_lines))
-
-    @time lpush(conn, :games, fen_lines)
+    for chunk in Iterators.partition(lines, Int(1e6))
+        fen_lines = collect(filter(x -> length(x) > 1 && x[1] == '1', chunk))
+        @time lpush(conn, :games, fen_lines)
+    end
 end
 
 """
@@ -32,10 +32,11 @@ in the DB called "boards".
 """
 function populate_stockfish_queue()
     conn = RedisConnection()
-    data = collect(keys(conn, "*"))
+    #data = collect(keys(conn, "*"))
 
     # chunk these operations to avoid timeout
-    for chunk in Iterators.partition(data, Int(1e6))
+    for chunk in Iterators.partition(keys(conn, "*"), Int(1e5))
+        println(length(chunk))
         # add them to the "boards list"
         lpush(conn, :boards, Vector{String}(chunk))
         # remove them as a key->count pair
@@ -87,7 +88,7 @@ end
 Continually pops a batch of data from "games", gets all of their unique boards,
 and then stores them back into the database as their fen representation.
 """
-function fen_worker(chunk::Int = 1000)
+function fen_worker(chunk::Int = 100000)
     conn = RedisConnection()
 
     println("working...")
@@ -137,7 +138,7 @@ and speed. These seem to clock in anywhere between [.01, .3].
 function get_move(engine::Engine, fen_board::String)::String
     board = fromfen(fen_board)
     setboard(engine, board)
-    move = search(engine, "go depth 15").bestmove
+    move = search(engine, "go depth 2").bestmove
     return tostring(move)
 end
 
@@ -147,7 +148,7 @@ end
 Worker process, gets pops chunks of boards from the redis server, runs them
 through the engine, and then stores the board and the move as a key value pair
 """
-function stockfish_worker(chunk_size::Int = 100)
+function stockfish_worker(chunk_size::Int = 100000)
     conn = RedisConnection()
 
     # create our engine
@@ -183,47 +184,6 @@ function stockfish_worker(chunk_size::Int = 100)
 end
 
 """
-    tokenize_board(b::Board)
-
-Converts the board, `b` into a csv-like token representation.
-"""
-function tokenize_board(b::Board)
-    out_str = ""
-    for ri ∈ 1:8
-        r = SquareRank(ri)
-        for fi ∈ 1:8
-            f = SquareFile(fi)
-            p = pieceon(b, f, r)
-            if isok(p)
-                out_str *= tochar(p) * ","
-            else
-                out_str *= "e,"
-            end
-        end
-    end
-
-    if sidetomove(b) == WHITE::PieceColor
-        out_str *= "w,"
-    else
-        out_str *= "b,"
-    end
-
-    return out_str
-end
-
-"""
-    tokenize_move(m::Move)
-
-Converts the move, `m` into a csv-like token representation.
-"""
-function tokenize_move(m::Move)
-    return tostring(from(m)) *
-           "," *
-           tostring(to(m)) *
-           (ispromotion(m) ? tochar(promotion(m)) : "")
-end
-
-"""
     to_dataset(path::String)
 
 Converts the key value board move pairs stored in our DB into a text file
@@ -248,9 +208,7 @@ function to_dataset(path::String)
     io = open(path, "w")
 
     for (board, move) in zip(boards, moves)
-        board = fromfen(board)
-        move = movefromstring(move)
-        rep = tokenize_board(board) * tokenize_move(move) * "\n"
+        rep = board * "," * move * "\n"
         write(io, rep)
     end
     close(io)
