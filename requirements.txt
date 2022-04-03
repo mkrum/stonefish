@@ -8,3 +8,4 @@ matplotlib
 pyyaml
 chessplotlib
 open_spiel
+yamlargs

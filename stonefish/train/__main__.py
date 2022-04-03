@@ -1,5 +1,6 @@
 from stonefish.train import TrainingContext, train_step
-from stonefish.config import load_model, load_config_and_parse_cli
+from stonefish.config import load_model
+from yamlargs.parser import load_config_and_parse_cli
 from stonefish.eval import eval_model
 
 if __name__ == "__main__":
