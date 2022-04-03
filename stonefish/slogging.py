@@ -20,6 +20,7 @@ class Logger:
     def init(cls, output_dir=".", log_file=".", overwrite=False, log_freq=100):
         cls.output_dir = output_dir
         cls.log_freq = log_freq
+        os.makedirs(cls.output_dir, exist_ok=True)
         log_path = f"{output_dir}/{log_file}"
 
         if not overwrite and os.path.exists(log_path):

@@ -1,5 +1,6 @@
 import multiprocessing as mp
 from collections import deque
+import time
 
 import tqdm
 import torch
@@ -19,7 +20,6 @@ from dataclasses import dataclass, field
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
 import stonefish.utils as ut
-
 
 
 @dataclass
@@ -119,7 +119,9 @@ def run_game(white_engine, black_engine):
             try:
                 move = white_engine(board)
             except AssertionError:
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
 
             while move not in list(board.legal_moves):
                 move = white_engine.sample(board)
@@ -127,12 +129,13 @@ def run_game(white_engine, black_engine):
             move = black_engine(board)
 
         board.push(move)
-        moves +=1
+        moves += 1
 
         if board.halfmove_clock >= 100:
             break
 
     return chess.pgn.Game().from_board(board)
+
 
 def get_board_reward_white(board):
     outcome = board.outcome()
@@ -145,7 +148,6 @@ def get_board_reward_white(board):
 
 
 class _Env:
-
     def __init__(self):
         self.eng = RandomEngine()
         self.reset()
@@ -161,19 +163,21 @@ class _Env:
 
         move = MoveRep.from_tensor(move).to_uci()
 
+        reward = 0.0
+
         if self.board.fullmove_number > 50 or self.board.halfmove_clock >= 99:
             return self.failure_reset()
 
-        try:
-            self.board.push(move)
-        except AssertionError:
-            return self.failure_reset()
+        if not self.board.is_legal(move):
+            reward -= 1.0
+            move = np.random.choice(list(self.board.legal_moves))
 
-        reward = 0
+        self.board.push(move)
+
         done = False
         if self.board.is_game_over():
             done = True
-            reward = get_board_reward_white(self.board)
+            reward += get_board_reward_white(self.board)
             self.board = chess.Board()
         else:
             response = self.eng(self.board)
@@ -181,7 +185,7 @@ class _Env:
 
             if self.board.is_game_over():
                 done = True
-                reward = get_board_reward_white(self.board)
+                reward += get_board_reward_white(self.board)
                 self.board = chess.Board()
 
         board_tensor = BoardRep.from_board(self.board).to_tensor().unsqueeze(0)
@@ -224,7 +228,9 @@ class RolloutTensor:
         new_next_state = torch.cat((self.next_state, next_state), 1)
         new_reward = torch.cat((self.reward, reward), 1)
         new_done = torch.cat((self.done, done), 1)
-        return RolloutTensor(new_state, new_action, new_next_state, new_reward, new_done)
+        return RolloutTensor(
+            new_state, new_action, new_next_state, new_reward, new_done
+        )
 
     def stack(self, other) -> "RolloutTensor":
 
@@ -236,14 +242,18 @@ class RolloutTensor:
         new_next_state = torch.cat((self.next_state, other.next_state), 1)
         new_reward = torch.cat((self.reward, other.reward), 1)
         new_done = torch.cat((self.done, other.done), 1)
-        return RolloutTensor(new_state, new_action, new_next_state, new_reward, new_done)
+        return RolloutTensor(
+            new_state, new_action, new_next_state, new_reward, new_done
+        )
 
     def decay_(self, gamma, values) -> "RolloutTensor":
 
         self.reward[:, -1] += ~self.done[:, -1] * gamma * values
 
         for i in reversed(range(len(self) - 1)):
-            self.reward[:, i] = self.reward[:, i] + ~self.done[:, i] * gamma * self.reward[:, i + 1]
+            self.reward[:, i] = (
+                self.reward[:, i] + ~self.done[:, i] * gamma * self.reward[:, i + 1]
+            )
 
     def raw_rewards(self):
         return self.reward[self.done]
@@ -254,7 +264,10 @@ class RolloutTensor:
         new_next_state = self.next_state.to(device)
         new_reward = self.reward.to(device)
         new_done = self.done.to(device)
-        return RolloutTensor(new_state, new_action, new_next_state, new_reward, new_done)
+        return RolloutTensor(
+            new_state, new_action, new_next_state, new_reward, new_done
+        )
+
 
 def worker(state_q, action_q):
     env = _Env()
@@ -264,19 +277,24 @@ def worker(state_q, action_q):
 
     while True:
         action = action_q.get()
+        start = time.time()
         out = env.step(action)
         state_q.put(out)
 
-class StackedEnv:
 
+class StackedEnv:
     def _reset(self):
         self.action_qs = [mp.Queue() for _ in range(self.n)]
         self.state_qs = [mp.Queue() for _ in range(self.n)]
-        procs = [mp.Process(target=worker, args=(self.state_qs[i], self.action_qs[i])) for i in range(self.n)]
+
+        procs = [
+            mp.Process(target=worker, args=(self.state_qs[i], self.action_qs[i]))
+            for i in range(self.n)
+        ]
 
         for p in procs:
             p.start()
-    
+
     def __init__(self, n):
         self.n = n
         self._reset()
@@ -286,6 +304,7 @@ class StackedEnv:
         return torch.stack(states)
 
     def step(self, actions):
+
         for i, aq in enumerate(self.action_qs):
             aq.put(actions[i])
 
@@ -301,49 +320,66 @@ def batched_index_select(input, dim, index):
     index = index.expand(expanse)
     return torch.gather(input, dim, index)
 
+
 if __name__ == "__main__":
-    mp.set_start_method('spawn')
+    mp.set_start_method("spawn")
 
     device = torch.device("cuda")
-    
+
     policy = BaseModel(device, BoardRep, MoveRep, emb_dim=256)
-    policy.load_state_dict(torch.load("/nfs/fishtank/openai/model_1.pth", map_location=device))
+    policy.load_state_dict(
+        torch.load("/nfs/fishtank/openai/model_1.pth", map_location=device)
+    )
     policy = policy.to(device)
-    
-    value_model = nn.Sequential(
-        nn.Linear(256, 1)
-    ).to(device)
+
+    value_model = nn.Sequential(nn.Linear(256, 1)).to(device)
 
     env = StackedEnv(20)
-    
-    opt = optim.Adam([{'params':list(value_model.parameters()), 'lr':1e-2},
-                     {"params": list(policy.parameters()), 'lr':5e-5}]
-                     )
-    
+
+    opt = optim.Adam(
+        [
+            {"params": list(value_model.parameters()), "lr": 1e-2},
+            {"params": list(policy.parameters()), "lr": 5e-5},
+        ]
+    )
+
     pl_hist = deque(maxlen=100)
     vl_hist = deque(maxlen=100)
     progress = deque(maxlen=100)
 
     state = env.reset()
-    for it in range(1000):
-        
+    for it in range(int(100)):
+
         history = RolloutTensor.empty()
 
+        tot_time = 0.0
         for _ in range(32):
             action = policy.sample(state.squeeze(1), max_len=2)
+            start = time.time()
             next_state, reward, done = env.step(action.cpu())
             action = action.unsqueeze(1)
 
             history = history.add(state, action, next_state, reward, done)
 
             state = next_state
+            tot_time += time.time() - start
 
-        out, _ = policy(state.squeeze(1).to(device), action.squeeze(1), return_hidden=True)
+        print(tot_time)
+        print(f"Sample: {time.time() - start}")
+        start = time.time()
+
+        out, _ = policy(
+            state.squeeze(1).to(device), action.squeeze(1), return_hidden=True
+        )
         decay_values = value_model(out[:, -1, :])
 
         history = history.to(device)
-        history.decay_(0.99, decay_values.view(-1,).detach())
-    
+        history.decay_(
+            0.99,
+            decay_values.view(
+                -1,
+            ).detach(),
+        )
 
         term_rewards = history.reward[history.done]
         for r in term_rewards:
@@ -352,8 +388,9 @@ if __name__ == "__main__":
         flat_state = history.state.view(-1, history.state.shape[-1])
         flat_next_state = history.state.view(-1, history.next_state.shape[-1])
         flat_action = history.action.view(-1, history.action.shape[-1])
-        flat_reward = history.reward.view(-1,)
-         
+        flat_reward = history.reward.view(
+            -1,
+        )
 
         out, full_logits = policy(flat_state, flat_action, return_hidden=True)
         out = out[:, -1, :]
@@ -371,11 +408,18 @@ if __name__ == "__main__":
         loss.backward()
         opt.step()
 
+        print(f"Train: {time.time() - start}")
+
         pl_hist.append(policy_loss.item())
         vl_hist.append(value_loss.item())
 
-        print(f'{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)}', flush=True)
+        print(
+            f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)}",
+            flush=True,
+        )
 
         if it % 100 == 0:
             torch.save(policy.state_dict(), "/nfs/fishtank/openai/random.pth")
-
+            torch.save(
+                value_model.state_dict(), "/nfs/fishtank/openai/random_value.pth"
+            )

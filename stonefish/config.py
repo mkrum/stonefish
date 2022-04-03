@@ -18,15 +18,18 @@ from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
 from yamlargs import make_lazy_constructor, make_lazy_function, YAMLConfig
 
+
 def load_model(config, load=None):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = config["model"](device, config["input_rep"](), config["output_rep"]())
     model = model.to(device)
 
-    if load: model.load_state_dict(torch.load(load, map_location=device))
+    if load:
+        model.load_state_dict(torch.load(load, map_location=device))
 
     return model
+
 
 def logging_constructor(loader, node):
     """
@@ -38,6 +41,7 @@ def logging_constructor(loader, node):
     value = loader.construct_mapping(node)
     Logger.init(**value)
     return Logger
+
 
 # Logger YAML configuration
 yaml.add_constructor("!Logger", logging_constructor)

@@ -3,27 +3,25 @@ input_rep: !BoardRep
 output_rep: !MoveRep
 
 logging: !Logger
-    output_dir: /nfs/fishtank/openai
+    output_dir: /nfs/fishtank/testing
     log_file: basic.txt
     overwrite: True
 
 model: !BaseModel
-    emb_dim: 256
+    emb_dim: 32
 
 opt: !Adam
-    lr: !!float 1e-4
-    betas: !!python/tuple [0.9, 0.98]
-    eps: !!float 1e-9
+    lr: !!float 1e-3
 
 train_dl: !DataLoader
     dataset: !ChessData
-        path: ./data/train_mondo_5.csv 
-    batch_size: 512
+        path: /nfs/one_train.csv 
+    batch_size: 256
     shuffle: True
     drop_last: True
 
 test_dl: !DataLoader
     dataset: !ChessData
-        path: ./data/test_mondo_5.csv 
+        path: /nfs/one_test.csv 
     batch_size: 512
     shuffle: True

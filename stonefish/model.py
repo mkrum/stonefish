@@ -179,7 +179,6 @@ class BaseModel(nn.Module):
 
         return logits
 
-
     def forward_with_hidden(self, state, action):
         """
         Returns the *shifted* logits for generating the action.
@@ -195,7 +194,6 @@ class BaseModel(nn.Module):
         out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
         logits = self.to_dist(out)
         return out, logits[:, :-1, :]
-
 
     def _inference(self, state, max_len, action_sel):
         """Underlying inference function"""
