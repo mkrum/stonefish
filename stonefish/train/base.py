@@ -4,7 +4,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from stonefish.slogging import Logger
+from mllg import TestInfo, TrainInfo, ValidationInfo
 
 from stonefish.mask import MoveMask
 from stonefish.rep import MoveRep
@@ -59,13 +59,12 @@ class TrainingContext:
     epochs: int = 1000
     eval_freq: int = 5000
 
-    def __call__(self, model, opt):
+    def __call__(self, logger, model, opt):
 
         for epoch in range(self.epochs):
-            Logger.epoch()
+
             out = self.eval_fn(model, self.test_dl, self.train_fn)
-            Logger.test_output(*out)
-            Logger.save_checkpoint(model, opt)
+            logger.log_info(ValidationInfo(0, 0, out))
 
             for (batch_idx, (state, output)) in enumerate(self.train_dl):
                 opt.zero_grad()
@@ -73,13 +72,13 @@ class TrainingContext:
                 loss.backward()
                 opt.step()
 
-                Logger.loss(model, opt, batch_idx, len(self.train_dl), loss.item())
+                logger.log_info(TrainInfo(epoch, batch_idx, loss.item()))
 
                 if batch_idx % self.eval_freq == 0 and batch_idx > 0:
                     out = self.eval_fn(model, self.test_dl, self.train_fn)
-                    Logger.test_output(*out)
-                    Logger.save_checkpoint(model, opt)
+                    logger.log_info(ValidationInfo(epoch, batch_idx, out))
+                    logger.checkpoint(epoch, batch_idx, model)
 
             out = self.eval_fn(model, self.test_dl, self.train_fn)
-            Logger.test_output(*out)
-            Logger.save_checkpoint(model, opt)
+            logger.log_info(ValidationInfo(epoch, batch_idx, out))
+            logger.checkpoint(epoch, batch_idx, model)

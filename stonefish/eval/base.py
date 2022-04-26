@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 from stonefish.rep import MoveToken, MoveRep, BoardRep
 from chessplotlib import plot_board, plot_move, mark_move
-from stonefish.slogging import Logger
+
+from mllg import TestInfo
 
 
 def eval_model(model, datal, train_fn, max_batch=20):
@@ -48,7 +49,8 @@ def eval_model(model, datal, train_fn, max_batch=20):
 
     acc = correct / total
     m_loss = np.mean(losses)
-    return acc.item(), m_loss
+
+    return [TestInfo("ACC", acc.item()), TestInfo("Loss", m_loss)]
 
 
 def move_vis(model, data, N):

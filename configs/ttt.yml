@@ -2,28 +2,23 @@
 input_rep: !TTTBoardRep
 output_rep: !TTTMoveRep
 
-logging: !Logger
-    output_dir: /tmp
-    log_file: test.txt
-    overwrite: True
-
-model: !BaseModel
+model: !BaseModel()
     emb_dim: 32
 
-opt: !Adam
+opt: !Adam()
     lr: !!float 1e-4
     betas: !!python/tuple [0.9, 0.98]
     eps: !!float 1e-9
 
-train_dl: !DataLoader
-    dataset: !TTTData
-        path: ./data/ttt_easy_train.csv 
+train_dl: !DataLoader()
+    dataset: !TTTData()
+        path: ./data/ttt_easy_train.csv
     batch_size: 128
     shuffle: True
     drop_last: True
 
-test_dl: !DataLoader
-    dataset: !TTTData
-        path: ./data/ttt_easy_test.csv 
+test_dl: !DataLoader()
+    dataset: !TTTData()
+        path: ./data/ttt_easy_test.csv
     batch_size: 128
     shuffle: True
