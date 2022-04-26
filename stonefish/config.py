@@ -10,7 +10,7 @@ import torch.optim as optim
 from rich import print
 from transformers import AutoTokenizer
 
-from stonefish.dataset import ChessData, TTTData, default_collate_fn
+from stonefish.dataset import CEChessData, ChessData, TTTData, default_collate_fn
 from stonefish.slogging import Logger
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep, create_tokenizer_rep
@@ -49,6 +49,7 @@ yaml.add_constructor("!Logger", logging_constructor)
 # Lazy Objects
 make_lazy_constructor(TTTData)
 make_lazy_constructor(ChessData)
+make_lazy_constructor(CEChessData)
 make_lazy_constructor(BaseModel)
 make_lazy_constructor(DataLoader, {"collate_fn": default_collate_fn})
 

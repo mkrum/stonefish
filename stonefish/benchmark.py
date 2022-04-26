@@ -19,10 +19,7 @@ from dataclasses import dataclass, field
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-from stonefish.mask import MoveMask
 import stonefish.utils as ut
-
-from chessenv import CChessEnv, SFCChessEnv, CMove
 
 
 @dataclass
@@ -43,9 +40,6 @@ class Stockfish:
 
     def quit(self):
         self._engine.quit()
-
-    def __del__(self):
-        self.quit()
 
 
 @dataclass
@@ -211,11 +205,10 @@ class RolloutTensor:
     next_state: torch.FloatTensor
     reward: torch.FloatTensor
     done: torch.BoolTensor
-    mask: torch.FloatTensor
 
     @classmethod
     def empty(cls):
-        return cls(None, None, None, None, None, None)
+        return cls(None, None, None, None, None)
 
     def __len__(self):
         if self.state is None:
@@ -225,19 +218,18 @@ class RolloutTensor:
     def is_empty(self):
         return self.state == None
 
-    def add(self, state, action, next_state, reward, done, mask) -> "RolloutTensor":
+    def add(self, state, action, next_state, reward, done) -> "RolloutTensor":
 
         if self.is_empty():
-            return RolloutTensor(state, action, next_state, reward, done, mask)
+            return RolloutTensor(state, action, next_state, reward, done)
 
         new_state = torch.cat((self.state, state), 1)
         new_action = torch.cat((self.action, action), 1)
         new_next_state = torch.cat((self.next_state, next_state), 1)
         new_reward = torch.cat((self.reward, reward), 1)
         new_done = torch.cat((self.done, done), 1)
-        new_mask = torch.cat((self.mask, mask), 1)
         return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
+            new_state, new_action, new_next_state, new_reward, new_done
         )
 
     def stack(self, other) -> "RolloutTensor":
@@ -250,9 +242,8 @@ class RolloutTensor:
         new_next_state = torch.cat((self.next_state, other.next_state), 1)
         new_reward = torch.cat((self.reward, other.reward), 1)
         new_done = torch.cat((self.done, other.done), 1)
-        new_mask = torch.cat((self.mask, other.mask), 1)
         return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
+            new_state, new_action, new_next_state, new_reward, new_done
         )
 
     def decay_(self, gamma, values) -> "RolloutTensor":
@@ -273,9 +264,8 @@ class RolloutTensor:
         new_next_state = self.next_state.to(device)
         new_reward = self.reward.to(device)
         new_done = self.done.to(device)
-        new_mask = self.mask.to(device)
         return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
+            new_state, new_action, new_next_state, new_reward, new_done
         )
 
 
@@ -336,29 +326,20 @@ if __name__ == "__main__":
 
     device = torch.device("cuda")
 
-    policy = BaseModel(
-        device,
-        BoardRep,
-        MoveRep,
-        emb_dim=32,
-        num_encoder_layers=3,
-        num_decoder_layers=3,
-    )  # , emb_dim=32)
+    policy = BaseModel(device, BoardRep, MoveRep, emb_dim=256)
     policy.load_state_dict(
-        torch.load("/nfs/fishtank/anotherone/model_8.pth", map_location=device)
+        torch.load("/nfs/fishtank/openai/model_1.pth", map_location=device)
     )
     policy = policy.to(device)
 
-    value_model = nn.Sequential(nn.Linear(32, 1)).to(device)
+    value_model = nn.Sequential(nn.Linear(256, 1)).to(device)
 
-    N_env = 64
-
-    env = CChessEnv(N_env)  # , 1)
+    env = StackedEnv(2)
 
     opt = optim.Adam(
         [
-            {"params": list(value_model.parameters()), "lr": 1e-4},
-            {"params": list(policy.parameters()), "lr": 1e-4},
+            {"params": list(value_model.parameters()), "lr": 1e-2},
+            {"params": list(policy.parameters()), "lr": 5e-5},
         ]
     )
 
@@ -366,48 +347,63 @@ if __name__ == "__main__":
     vl_hist = deque(maxlen=100)
     progress = deque(maxlen=100)
 
-    state = torch.LongTensor(env.reset()).view(N_env, 1, 69)
-    for it in range(int(1e5)):
+    state = env.reset()
+    for it in range(int(100)):
 
         history = RolloutTensor.empty()
 
-        tot_time = 0.0
-        for _ in range(16):
+        times = {"step": [], "model": [], "env": []}
 
-            move_mask = MoveMask.from_env(env)
+        for _ in range(32):
 
-            action, output_mask = policy.sample(
-                state.squeeze(1), max_len=2, move_mask=move_mask
-            )
-            moves = [
-                MoveRep.from_tensor(action[i]).to_str() for i in range(action.shape[0])
-            ]
+            total_start = time.time()
 
-            for i in range(len(moves)):
-                assert move_mask.is_valid(moves[i], i)
+            model_start = time.time()
+            action = policy.sample(state.squeeze(1), max_len=2)
+            model_end = time.time()
 
-            next_state, reward, done = env.step(moves)
-
-            next_state = torch.LongTensor(next_state).view(N_env, 1, 69)
-            reward = torch.FloatTensor(reward).view(-1, 1)
-            done = torch.BoolTensor(done).view(-1, 1)
-
+            env_start = time.time()
+            next_state, reward, done = env.step(action.cpu())
+            env_en = time.time()
             action = action.unsqueeze(1)
 
-            history = history.add(state, action, next_state, reward, done, output_mask)
+            history = history.add(state, action, next_state, reward, done)
 
             state = next_state
+            # tot_time += time.time() - start
+
+        # print(tot_time)
+        # print(f"Sample: {time.time() - start}")
+        start = time.time()
+
+        bench = state[:1]
+        while bench.shape[0] <= 512:
+            times = []
+            bench_ = bench.squeeze(1)
+            for _ in range(100):
+                start = time.time()
+                with torch.no_grad():
+                    policy.sample(bench_, max_len=2)
+                end = time.time()
+                times.append(end - start)
+
+            print(f"{bench.shape[0]}", end="")
+            for t in times:
+                print(f",{t}", end="")
+            print()
+            bench = bench.repeat(2, 1, 1)
+
+        exit()
+        import pdb
+
+        pdb.set_trace()
 
         out, _ = policy(
-            state.squeeze(1).to(device),
-            action.squeeze(1),
-            return_hidden=True,
+            state.squeeze(1).to(device), action.squeeze(1), return_hidden=True
         )
-
         decay_values = value_model(out[:, -1, :])
 
         history = history.to(device)
-
         history.decay_(
             0.99,
             decay_values.view(
@@ -426,11 +422,7 @@ if __name__ == "__main__":
             -1,
         )
 
-        flat_mask = history.mask.view(-1, 2, MoveRep.width())
-
-        out, full_logits = policy(
-            flat_state, flat_action, return_hidden=True, logit_mask=flat_mask
-        )
+        out, full_logits = policy(flat_state, flat_action, return_hidden=True)
         out = out[:, -1, :]
         values = value_model(out)
 
@@ -446,10 +438,18 @@ if __name__ == "__main__":
         loss.backward()
         opt.step()
 
+        print(f"Train: {time.time() - start}")
+
         pl_hist.append(policy_loss.item())
         vl_hist.append(value_loss.item())
 
         print(
-            f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)} W: {np.sum(np.array(progress) == 1.0)/len(progress)}",
+            f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)}",
             flush=True,
         )
+
+        if it % 100 == 0:
+            torch.save(policy.state_dict(), "/nfs/fishtank/openai/random.pth")
+            torch.save(
+                value_model.state_dict(), "/nfs/fishtank/openai/random_value.pth"
+            )

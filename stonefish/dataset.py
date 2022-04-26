@@ -9,6 +9,8 @@ from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
 from torch.nn.utils.rnn import pad_sequence
 
+from chessenv import CBoard
+
 
 def default_collate_fn(batch):
     source, target = zip(*batch)
@@ -43,6 +45,28 @@ class ChessData(Dataset):
         board_tokens = BoardRep.from_fen(board_fen)
         move = MoveRep.from_str(actions)
         return board_tokens.to_tensor(), move.to_tensor()
+
+
+class CEChessData(Dataset):
+    def __init__(self, path):
+        super().__init__()
+
+        with open(path, "r") as f:
+            self.data = f.readlines()
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, i):
+        raw = self.data[i].rstrip().split(",")
+
+        # Data is "fen,move"
+        board_fen = raw[0]
+        actions = raw[1]
+
+        board_tokens = CBoard.from_fen(board_fen).to_array()
+        move = MoveRep.from_str(actions)
+        return torch.LongTensor(board_tokens), move.to_tensor()
 
 
 class TTTData(ChessData):

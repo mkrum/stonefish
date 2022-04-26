@@ -6,11 +6,36 @@ import torch.nn.functional as F
 
 from stonefish.slogging import Logger
 
+from stonefish.mask import MoveMask
+from stonefish.rep import MoveRep
+
 
 def train_step(model, state, output):
     model.train()
 
     probs = model(state, output)
+
+    probs = probs.reshape(-1, probs.shape[-1])
+
+    output = output[:, 1:].reshape(
+        -1,
+    )
+    probs = probs[output != -1]
+    output = output[output != -1]
+
+    loss = F.nll_loss(probs, output.flatten().to(probs.device))
+    return loss
+
+
+def mask_train_step(model, state, output):
+    model.train()
+
+    mm = MoveMask.from_data(state, output)
+
+    masks = mm.update_mask(output)
+    masks = masks[:, 1:, :]
+
+    probs = model(state, output, logit_mask=masks.cuda())
 
     probs = probs.reshape(-1, probs.shape[-1])
 

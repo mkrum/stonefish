@@ -37,12 +37,12 @@ def eval_model(model, datal, train_fn, max_batch=20):
 
         if batch_idx == max_batch:
 
-            for i in range(16):
-                example = s[i]
-                example = example[example != -1]
-                print(model.input_rep.from_tensor(example).to_str())
-                print(model.output_rep.from_tensor(infer[i]).to_str())
-                print()
+            #    for i in range(16):
+            #        example = s[i]
+            #        example = example[example != -1]
+            #        #print(model.input_rep.from_tensor(example).to_str())
+            #        print(model.output_rep.from_tensor(infer[i]).to_str())
+            #        print()
 
             break
 

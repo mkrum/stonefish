@@ -95,8 +95,10 @@ class BaseModel(nn.Module):
         self.to_emb_move = nn.Sequential(nn.Linear(8, emb_dim))
 
         self.to_dist = nn.Sequential(
-            nn.Linear(emb_dim, output_rep.width()), nn.LogSoftmax(dim=-1)
+            nn.Linear(emb_dim, output_rep.width()),
         )
+
+        self.out_act = nn.LogSoftmax(dim=-1)
 
         for p in self.transformer.parameters():
             if p.dim() > 1:
@@ -157,7 +159,7 @@ class BaseModel(nn.Module):
         )
         return out
 
-    def forward(self, state, action, return_hidden=False):
+    def forward(self, state, action, return_hidden=False, logit_mask=None):
         """
         Returns the *shifted* logits for generating the action.
         """
@@ -170,9 +172,14 @@ class BaseModel(nn.Module):
         pos_embed_state = self._state_embed(~mask * state)
         tgt_embed = self._action_embed(~tgt_mask * action)
         out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
-        logits = self.to_dist(out)
+        prelogits = self.to_dist(out)
 
-        logits = logits[:, :-1, :]
+        prelogits = prelogits[:, :-1, :]
+
+        if logit_mask is not None:
+            prelogits = prelogits * logit_mask + (1 - logit_mask) * -1e8
+
+        logits = self.out_act(prelogits)
 
         if return_hidden:
             return out, logits
@@ -195,8 +202,9 @@ class BaseModel(nn.Module):
         logits = self.to_dist(out)
         return out, logits[:, :-1, :]
 
-    def _inference(self, state, max_len, action_sel):
+    def _inference(self, state, max_len, action_sel, move_mask=None):
         """Underlying inference function"""
+
         state = state.to(self.device)
         mask = get_mask(state)
 
@@ -214,11 +222,17 @@ class BaseModel(nn.Module):
 
             logits = self.to_dist(out)[:, -1, :]
 
-            next_value = action_sel(logits)
+            if move_mask is not None:
+                logits, move_mask = move_mask.mask(logits, tokens)
+
+            next_value = action_sel(self.out_act(logits))
 
             tokens = torch.cat((tokens, next_value), dim=1)
             embed_next = self.to_emb_move(self.move_embed(next_value))
             decode = torch.cat((decode, embed_next), dim=1)
+
+        if move_mask:
+            return tokens, move_mask.masks
 
         return tokens
 
@@ -232,93 +246,10 @@ class BaseModel(nn.Module):
         return self._inference(state, max_len, max_action_sel)
 
     @torch.no_grad()
-    def sample(self, state, max_len):
+    def sample(self, state, max_len, move_mask=None):
         """Samples an action via the distribution"""
 
         def sample_action_sel(logits):
             return Categorical(logits=logits).sample().view(-1, 1)
 
-        return self._inference(state, max_len, sample_action_sel)
-
-
-class GPTModel(nn.Module):
-    def __init__(self, device, tokenizer, model_name):
-        super().__init__()
-        self.tokenizer = tokenizer
-
-        self.device = device
-
-        self.model = GPT2LMHeadModel.from_pretrained(model_name).to(device)
-
-    def forward(self, state):
-        state = state.to(self.device)
-
-        mask = get_mask(state)
-        out = self.model(~mask * state)
-        return out.logits
-
-    @torch.no_grad()
-    def generate(self, primer: str, max_length=50, temp=0.75):
-        gen = primer
-        next_value = ""
-        t = 0
-        while next_value != "<|endoftext|>" and t < max_length:
-            inp = torch.LongTensor(self.tokenizer.encode(gen)).cuda()
-            inp = inp.unsqueeze(0)
-            out = self.forward(inp)[0, -1] / temp
-            dist = Categorical(logits=out)
-            next_value = self.tokenizer.decode(dist.sample())
-            gen += next_value
-            t += 1
-        return gen
-
-    @torch.no_grad()
-    def inference(self, tensor, max_length=50, temp=0.75):
-        t = 0
-        while t < max_length:
-            out = self.forward(tensor)[:, -1] / temp
-            dist = Categorical(logits=out)
-            next_value = dist.sample().to(tensor.device)
-            tensor = torch.cat([tensor, next_value.unsqueeze(0)], dim=-1)
-            t += 1
-        return tensor
-
-
-class T5Model(nn.Module):
-    def __init__(self, device, tokenizer, model_name):
-        super().__init__()
-        self.device = device
-        self.tokenizer = tokenizer
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
-
-    def forward(self, state):
-        mask = get_mask(state)
-        state = state.to(self.device)
-        out = self.model(~mask * state)
-        return out.logits
-
-    @torch.no_grad()
-    def generate(self, primer: str, max_length=50, temp=0.75):
-        gen = primer
-        next_value = ""
-        t = 0
-        while next_value != "<|endoftext|>" and t < max_length:
-            inp = torch.LongTensor(self.tokenizer.encode(gen)).cuda()
-            inp = inp.unsqueeze(0)
-            out = self.forward(inp)[0, -1] / temp
-            dist = Categorical(logits=out)
-            next_value = self.tokenizer.decode(dist.sample())
-            gen += next_value
-            t += 1
-        return gen
-
-    @torch.no_grad()
-    def inference(self, tensor, max_length=50, temp=0.75):
-        t = 0
-        while t < max_length:
-            out = self.forward(tensor)[:, -1] / temp
-            dist = Categorical(logits=out)
-            next_value = dist.sample().to(tensor.device)
-            tensor = torch.cat([tensor, next_value.unsqueeze(0)], dim=-1)
-            t += 1
-        return tensor
+        return self._inference(state, max_len, sample_action_sel, move_mask=move_mask)
