@@ -10,3 +10,4 @@ chessplotlib
 open_spiel
 yamlargs
 mllg
+open_spiel

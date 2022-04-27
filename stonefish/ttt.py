@@ -29,6 +29,9 @@ class TTTMoveRep(TupleEnum):
         str_list = cls._total[int_val]
         return cls.from_str_list(["<start>"] + list(str_list))
 
+    def to_str(self):
+        return str(self)
+
     def __str__(self):
         return self._values[0].to_str() + self._values[1].to_str()
 
@@ -42,6 +45,9 @@ class TTTMoveRep(TupleEnum):
 class TTTBoardRep(TupleEnum):
     length = 10
     token_type = TTTBoardToken
+
+    def to_str(self):
+        print(self.to_str_list())
 
     @classmethod
     def from_str(cls, str_value: str):
