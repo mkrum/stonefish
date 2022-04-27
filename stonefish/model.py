@@ -328,3 +328,42 @@ class ACBase(nn.Module):
     @torch.no_grad()
     def sample(self, state, move_mask=None):
         return self.policy.sample(state, max_len=2, move_mask=move_mask)
+
+
+class SimpleRL(nn.Module):
+    def __init__(
+        self,
+        device,
+    ):
+        super().__init__()
+        self.device = device
+        self.policy = nn.Sequential(
+            nn.Linear(27, 27),
+            nn.Tanh(),
+            nn.Linear(27, 9),
+        )
+        self.act = F.log_softmax
+
+        self.Q = nn.Sequential(
+            nn.Linear(27, 27),
+            nn.ReLU(),
+            nn.Linear(27, 1),
+        )
+
+    def forward(self, state, action, logit_mask=None):
+        state = state.to(self.device).float()
+        logits = self.act(self.policy(state) * logit_mask + (1 - logit_mask) * -1e8)
+        Q_values = self.Q(state)
+        return logits, Q_values
+
+    def Q_value(self, state, action):
+        state = state.to(self.device).float()
+        return self.Q(state)
+
+    @torch.no_grad()
+    def sample(self, state, move_mask=None):
+        state = state.to(self.device).float()
+        move_mask = move_mask.to(self.device)
+        logits = self.policy(state)
+        logits = self.act(logits * move_mask + (1 - move_mask) * -1e8)
+        return Categorical(logits=logits).sample()

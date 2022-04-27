@@ -235,27 +235,27 @@ class StackedEnv:
         states, rewards, dones = zip(*out)
         return torch.stack(states), torch.stack(rewards), torch.stack(dones)
 
-class TTTEnv:
 
+class TTTEnv:
     def __init__(self, n):
-        self.n = n 
+        self.n = n
         self._envs = [Environment(pyspiel.load_game("tic_tac_toe")) for _ in range(n)]
 
     def reset(self):
         out = [e.reset() for e in self._envs]
-        states = [o.observations['info_state'] for o in out]
-        
+        states = [o.observations["info_state"][0] for o in out]
+
         legal_mask = np.zeros((self.n, 9))
-        for (i, la) in enumerate([o.observations['legal_actions'] for o in out]):
+        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
             for a in la:
                 legal_mask[i, a] = 1.0
 
-        return torch.LongTensor(np.stack(states)), legal_mask
-    
+        return torch.LongTensor(np.stack(states)), torch.FloatTensor(legal_mask)
+
     def step(self, action):
         states = []
         legal_mask = np.zeros((self.n, 9))
-        rewards = np.zeros((self.n, ))
+        rewards = np.zeros((self.n,))
         dones = np.zeros((self.n,))
         for (i, a) in enumerate(action):
             a = np.array([a.item()])
@@ -267,19 +267,23 @@ class TTTEnv:
                 rewards[i] = out.rewards[0]
                 out = self._envs[i].reset()
             else:
-                response = random.sample(out.observations['legal_actions'][1], 1)
-    
+                response = random.sample(out.observations["legal_actions"][1], 1)
+
                 out = self._envs[i].step(np.array(response))
-    
+
                 if out.step_type == StepType.LAST:
                     dones[i] = 1.0
                     rewards[i] = out.rewards[0]
                     out = self._envs[i].reset()
-    
-            states.append(out.observations['info_state'])
 
-            for a in out.observations['legal_actions']:
+            states.append(out.observations["info_state"][0])
+
+            for a in out.observations["legal_actions"]:
                 legal_mask[i, a] = 1.0
-        
-        return torch.LongTensor(np.stack(states)), legal_mask, rewards, dones
 
+        return (
+            torch.LongTensor(np.stack(states)),
+            torch.FloatTensor(legal_mask),
+            rewards,
+            dones,
+        )

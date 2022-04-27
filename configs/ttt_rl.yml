@@ -1,0 +1,11 @@
+
+env: !TTTEnv()
+    n: 16
+
+input_rep: !BoardRep
+output_rep: !MoveRep
+
+model: !SimpleRL()
+
+opt: !Adam()
+    lr: !!float 1e-3
