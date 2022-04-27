@@ -237,7 +237,7 @@ class BaseModel(nn.Module):
         return tokens
 
     @torch.no_grad()
-    def inference(self, state, max_len):
+    def inference(self, state, max_len=2):
         """Returns the most likely actions for the given states"""
 
         def max_action_sel(logits):
@@ -253,3 +253,78 @@ class BaseModel(nn.Module):
             return Categorical(logits=logits).sample().view(-1, 1)
 
         return self._inference(state, max_len, sample_action_sel, move_mask=move_mask)
+
+
+class ClassModel(nn.Module):
+    def __init__(self, device, input_rep, output_rep):
+        super().__init__()
+        self.device = device
+        self.input_rep = input_rep
+        self.output_rep = output_rep
+
+        self.embed = nn.Embedding(30, 2).to(self.device)
+
+        self.model = nn.Sequential(
+            nn.Linear(2 * 69, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, output_rep.width()),
+            nn.LogSoftmax(dim=1),
+        ).to(self.device)
+
+    def forward(self, state, action):
+        state = state.to(self.device)
+        embedded_state = self.embed(state)
+        flat_es = embedded_state.view(-1, embedded_state.shape[1] * 2)
+        return self.model(flat_es)
+
+    def inference(self, state, action):
+        probs = self.forward(state, action)
+        return torch.argmax(probs, dim=1)
+
+
+class ACBase(nn.Module):
+    def __init__(
+        self, device, input_rep, output_rep, load_policy=None, load_value=None
+    ):
+        super().__init__()
+        self.device = device
+        self.policy = BaseModel(
+            device,
+            input_rep,
+            output_rep,
+            emb_dim=32,
+            num_encoder_layers=3,
+            num_decoder_layers=3,
+        ).to(self.device)
+        self.value = nn.Linear(32, 1).to(self.device)
+
+        if load_policy:
+            self.policy.load_state_dict(
+                torch.load(load_policy, map_location=self.device)
+            )
+
+        if load_value:
+            self.policy.load_state_dict(
+                torch.load(load_value, map_location=self.device)
+            )
+
+    def forward(self, state, action, logit_mask=None):
+        out, logits = self.policy.forward(
+            state, action, logit_mask=logit_mask, return_hidden=True
+        )
+        Q_values = self.value(out[:, -1, :])
+        return logits, Q_values
+
+    def Q_value(self, state, action):
+        out, _ = self.policy.forward(state, action, return_hidden=True)
+        return self.value(out[:, -1, :])
+
+    @torch.no_grad()
+    def sample(self, state, move_mask=None):
+        return self.policy.sample(state, max_len=2, move_mask=move_mask)

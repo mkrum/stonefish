@@ -7,6 +7,8 @@ import chess
 import torch
 import numpy as np
 
+from chessenv import CBoard
+
 
 class EnumRep:
     """
@@ -336,6 +338,60 @@ class MoveRep(TupleEnum):
         return move
 
 
+class MoveEnum(EnumRep):
+    """
+    Set of tokens that represent UCI moves
+
+    These tokens include:
+        1) Every square, ('e2', d2')
+        2) Every possible promotion move, ('h1q', a8r')
+    """
+
+    # Start with all the possible rows and columns on a chess board
+    _columns = ["a", "b", "c", "d", "e", "f", "g", "h"]
+    _rows = list(map(str, range(1, 9)))
+    # Convert these into a list of all of the squares
+    _squares = list(
+        map(lambda x: x[0] + x[1], list(itertools.product(_columns, _rows)))
+    )
+
+    # Get all of the possible promotion pieces
+    _promotion_pieces = ["r", "n", "b", "q"]
+    # Get all of the possible promotion moves
+    _top_promotions = list(
+        map(
+            lambda x: "".join(x),
+            list(itertools.product(_columns, ["1"], _promotion_pieces)),
+        )
+    )
+    _bottom_promotions = list(
+        map(
+            lambda x: "".join(x),
+            list(itertools.product(_columns, ["8"], _promotion_pieces)),
+        )
+    )
+
+    # All of the possible tokens in the move space.
+    _pairs = itertools.product(
+        _squares, _squares + _top_promotions + _bottom_promotions
+    )
+    _pairs = list(filter(lambda x: x[0] != x[1], _pairs))
+    _moves = list(map(lambda x: "".join(x), _pairs))
+
+    _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_moves)}
+    _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_moves)}
+
+    def width(self):
+        return len(MoveEnum._moves)
+
+    @classmethod
+    def from_tensor(cls, moves):
+        return cls(cls._moves[moves.item()])
+
+    def to_tensor(self):
+        return torch.LongTensor([self.to_int()])
+
+
 class BoardRep(TupleEnum):
     """
     Representation of the board state
@@ -511,6 +567,42 @@ class BoardRep(TupleEnum):
         """Converts to FEN"""
         as_board = self.to_board()
         return as_board.fen()
+
+    def __str__(self):
+        return self.to_fen()
+
+    def to_str(self):
+        return str(self)
+
+
+@dataclass
+class CBoardRep:
+    cboard: CBoard
+
+    @classmethod
+    def from_tensor(cls, tensor):
+        return cls(CBoard.from_array(np.int32(tensor.numpy())))
+
+    def to_tensor(self):
+        return torch.LongTensor(self.cboard.to_array())
+
+    @classmethod
+    def width(self):
+        return 69
+
+    @classmethod
+    def from_board(cls, board):
+        return cls(CBoard.from_board(board))
+
+    def to_board(self):
+        return self.cboard.to_board()
+
+    @classmethod
+    def from_fen(cls, fen_str):
+        return cls(CBoard.from_fen(fen_str))
+
+    def to_fen(self) -> str:
+        return self.cboard.to_fen()
 
     def __str__(self):
         return self.to_fen()

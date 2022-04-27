@@ -1,28 +1,14 @@
 import multiprocessing as mp
-from collections import deque
-import time
+from dataclasses import dataclass
 
-import tqdm
 import torch
-import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
-
 import chess
-import atexit
-import pyspiel
 import chess.engine
 import chess.pgn
-
 import numpy as np
-from dataclasses import dataclass, field
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-from stonefish.mask import MoveMask
-import stonefish.utils as ut
-
-from chessenv import CChessEnv, SFCChessEnv, CMove
 
 
 @dataclass
@@ -203,82 +189,6 @@ class _Env:
         return board_tensor
 
 
-@dataclass(frozen=True)
-class RolloutTensor:
-
-    state: torch.FloatTensor
-    action: torch.IntTensor
-    next_state: torch.FloatTensor
-    reward: torch.FloatTensor
-    done: torch.BoolTensor
-    mask: torch.FloatTensor
-
-    @classmethod
-    def empty(cls):
-        return cls(None, None, None, None, None, None)
-
-    def __len__(self):
-        if self.state is None:
-            return 0
-        return self.state.shape[1]
-
-    def is_empty(self):
-        return self.state == None
-
-    def add(self, state, action, next_state, reward, done, mask) -> "RolloutTensor":
-
-        if self.is_empty():
-            return RolloutTensor(state, action, next_state, reward, done, mask)
-
-        new_state = torch.cat((self.state, state), 1)
-        new_action = torch.cat((self.action, action), 1)
-        new_next_state = torch.cat((self.next_state, next_state), 1)
-        new_reward = torch.cat((self.reward, reward), 1)
-        new_done = torch.cat((self.done, done), 1)
-        new_mask = torch.cat((self.mask, mask), 1)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
-        )
-
-    def stack(self, other) -> "RolloutTensor":
-
-        if self.is_empty():
-            return other
-
-        new_state = torch.cat((self.state, other.state), 1)
-        new_action = torch.cat((self.action, other.action), 1)
-        new_next_state = torch.cat((self.next_state, other.next_state), 1)
-        new_reward = torch.cat((self.reward, other.reward), 1)
-        new_done = torch.cat((self.done, other.done), 1)
-        new_mask = torch.cat((self.mask, other.mask), 1)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
-        )
-
-    def decay_(self, gamma, values) -> "RolloutTensor":
-
-        self.reward[:, -1] += ~self.done[:, -1] * gamma * values
-
-        for i in reversed(range(len(self) - 1)):
-            self.reward[:, i] = (
-                self.reward[:, i] + ~self.done[:, i] * gamma * self.reward[:, i + 1]
-            )
-
-    def raw_rewards(self):
-        return self.reward[self.done]
-
-    def to(self, device):
-        new_state = self.state.to(device)
-        new_action = self.action.to(device)
-        new_next_state = self.next_state.to(device)
-        new_reward = self.reward.to(device)
-        new_done = self.done.to(device)
-        new_mask = self.mask.to(device)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done, new_mask
-        )
-
-
 def worker(state_q, action_q):
     env = _Env()
 
@@ -287,7 +197,6 @@ def worker(state_q, action_q):
 
     while True:
         action = action_q.get()
-        start = time.time()
         out = env.step(action)
         state_q.put(out)
 
@@ -321,135 +230,3 @@ class StackedEnv:
         out = [s.get() for s in self.state_qs]
         states, rewards, dones = zip(*out)
         return torch.stack(states), torch.stack(rewards), torch.stack(dones)
-
-
-def batched_index_select(input, dim, index):
-    expanse = list(input.shape)
-    expanse[0] = -1
-    expanse[dim] = -1
-    index = index.expand(expanse)
-    return torch.gather(input, dim, index)
-
-
-if __name__ == "__main__":
-    mp.set_start_method("spawn")
-
-    device = torch.device("cuda")
-
-    policy = BaseModel(
-        device,
-        BoardRep,
-        MoveRep,
-        emb_dim=32,
-        num_encoder_layers=3,
-        num_decoder_layers=3,
-    )  # , emb_dim=32)
-    policy.load_state_dict(
-        torch.load("/nfs/fishtank/anotherone/model_8.pth", map_location=device)
-    )
-    policy = policy.to(device)
-
-    value_model = nn.Sequential(nn.Linear(32, 1)).to(device)
-
-    N_env = 64
-
-    env = CChessEnv(N_env)  # , 1)
-
-    opt = optim.Adam(
-        [
-            {"params": list(value_model.parameters()), "lr": 1e-4},
-            {"params": list(policy.parameters()), "lr": 1e-4},
-        ]
-    )
-
-    pl_hist = deque(maxlen=100)
-    vl_hist = deque(maxlen=100)
-    progress = deque(maxlen=100)
-
-    state = torch.LongTensor(env.reset()).view(N_env, 1, 69)
-    for it in range(int(1e5)):
-
-        history = RolloutTensor.empty()
-
-        tot_time = 0.0
-        for _ in range(16):
-
-            move_mask = MoveMask.from_env(env)
-
-            action, output_mask = policy.sample(
-                state.squeeze(1), max_len=2, move_mask=move_mask
-            )
-            moves = [
-                MoveRep.from_tensor(action[i]).to_str() for i in range(action.shape[0])
-            ]
-
-            for i in range(len(moves)):
-                assert move_mask.is_valid(moves[i], i)
-
-            next_state, reward, done = env.step(moves)
-
-            next_state = torch.LongTensor(next_state).view(N_env, 1, 69)
-            reward = torch.FloatTensor(reward).view(-1, 1)
-            done = torch.BoolTensor(done).view(-1, 1)
-
-            action = action.unsqueeze(1)
-
-            history = history.add(state, action, next_state, reward, done, output_mask)
-
-            state = next_state
-
-        out, _ = policy(
-            state.squeeze(1).to(device),
-            action.squeeze(1),
-            return_hidden=True,
-        )
-
-        decay_values = value_model(out[:, -1, :])
-
-        history = history.to(device)
-
-        history.decay_(
-            0.99,
-            decay_values.view(
-                -1,
-            ).detach(),
-        )
-
-        term_rewards = history.reward[history.done]
-        for r in term_rewards:
-            progress.append(r.item())
-
-        flat_state = history.state.view(-1, history.state.shape[-1])
-        flat_next_state = history.state.view(-1, history.next_state.shape[-1])
-        flat_action = history.action.view(-1, history.action.shape[-1])
-        flat_reward = history.reward.view(
-            -1,
-        )
-
-        flat_mask = history.mask.view(-1, 2, MoveRep.width())
-
-        out, full_logits = policy(
-            flat_state, flat_action, return_hidden=True, logit_mask=flat_mask
-        )
-        out = out[:, -1, :]
-        values = value_model(out)
-
-        logits = batched_index_select(full_logits, 2, flat_action[:, 1:].unsqueeze(-1))
-        logits = logits.squeeze(-1)
-
-        opt.zero_grad()
-
-        value_loss = F.mse_loss(values, flat_reward.unsqueeze(-1))
-        policy_loss = -1.0 * torch.mean(flat_reward.unsqueeze(-1).cuda() * logits)
-
-        loss = value_loss + policy_loss
-        loss.backward()
-        opt.step()
-
-        pl_hist.append(policy_loss.item())
-        vl_hist.append(value_loss.item())
-
-        print(
-            f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)} W: {np.sum(np.array(progress) == 1.0)/len(progress)}",
-            flush=True,
-        )

@@ -7,11 +7,53 @@ import matplotlib.pyplot as plt
 
 from stonefish.rep import MoveToken, MoveRep, BoardRep
 from chessplotlib import plot_board, plot_move, mark_move
-
 from mllg import TestInfo
 
 
+def print_example(model, states, actions, infer):
+    for (s, a, i) in list(zip(states, actions, infer))[:16]:
+        example = s[s != -1]
+        board_str = model.input_rep.from_tensor(example).to_str()
+        pred_str = model.output_rep.from_tensor(i).to_str()
+        label_str = model.output_rep.from_tensor(a).to_str()
+        print(f"{board_str} {pred_str} {label_str}")
+
+
 def eval_model(model, datal, train_fn, max_batch=20):
+
+    correct = 0.0
+    total = 0.0
+    losses = []
+
+    for (batch_idx, (s, a)) in enumerate(datal):
+        model.eval()
+
+        infer = model.inference(s, a.shape[1] - 1)
+
+        for i in range(len(infer)):
+            pred_str = model.output_rep.from_tensor(infer[i]).to_str()
+            label_str = model.output_rep.from_tensor(a[i]).to_str()
+
+            total += 1.0
+            if pred_str == label_str:
+                correct += 1.0
+
+        with torch.no_grad():
+            loss = train_fn(model, s, a)
+
+        losses.append(loss.item())
+
+        if batch_idx == max_batch:
+            break
+
+    print_example(model, s, a, infer)
+
+    acc = correct / total
+    m_loss = np.mean(losses)
+    return [TestInfo("ACC", acc), TestInfo("loss", m_loss)]
+
+
+def seq_eval_model(model, datal, train_fn, max_batch=20):
 
     correct = 0.0
     total = 0.0
@@ -37,20 +79,13 @@ def eval_model(model, datal, train_fn, max_batch=20):
         losses.append(loss.item())
 
         if batch_idx == max_batch:
-
-            #    for i in range(16):
-            #        example = s[i]
-            #        example = example[example != -1]
-            #        #print(model.input_rep.from_tensor(example).to_str())
-            #        print(model.output_rep.from_tensor(infer[i]).to_str())
-            #        print()
-
             break
+
+    print_example(model, s, a, infer)
 
     acc = correct / total
     m_loss = np.mean(losses)
-
-    return [TestInfo("ACC", acc.item()), TestInfo("Loss", m_loss)]
+    return [TestInfo("ACC", acc.item()), TestInfo("loss", m_loss)]
 
 
 def move_vis(model, data, N):

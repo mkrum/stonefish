@@ -3,7 +3,7 @@ from typing import Dict, Any
 import torch
 
 from chessenv.rep import CMove, CBoard
-from stonefish.rep import MoveRep
+from stonefish.rep import MoveRep, MoveEnum
 
 
 @dataclass
@@ -15,22 +15,17 @@ class MoveMask:
 
     @classmethod
     def from_env(cls, env):
-        moves = env.get_possible()
+        moves = env.get_possible_moves()
 
-        tensor_map = {i: [] for i in range(moves.shape[0])}
-        move_map = {i: [] for i in range(moves.shape[0])}
-        for (j, m) in enumerate(moves):
-            i = 0
-            while m[i, 0] != -1:
-                tensor_map[j].append(
-                    MoveRep.from_str(CMove(m[i]).to_str()[0]).to_tensor()
-                )
-                move_map[j].append(MoveRep.from_str(CMove(m[i]).to_str()[0]).to_str())
-                i += 1
+        tensor_map = {i: [] for i in range(len(moves))}
+        move_map = {i: [] for i in range(len(moves))}
 
-        for i in range(len(tensor_map)):
+        for (i, move_stack) in enumerate(moves):
+            move_map[i] = move_stack.to_str()
+            for m in move_map[i]:
+                move_rep = MoveRep.from_str(m)
+                tensor_map[i].append(move_rep.to_tensor())
             tensor_map[i] = torch.stack(tensor_map[i])
-
         return cls(move_map, tensor_map, None)
 
     @classmethod

@@ -14,6 +14,14 @@ def train_step(model, state, output):
     model.train()
 
     probs = model(state, output)
+    loss = F.nll_loss(probs, output.to(probs.device).flatten())
+    return loss
+
+
+def seq_train_step(model, state, output):
+    model.train()
+
+    probs = model(state, output)
 
     probs = probs.reshape(-1, probs.shape[-1])
 
@@ -50,7 +58,7 @@ def mask_train_step(model, state, output):
 
 
 @dataclass
-class TrainingContext:
+class PreTrainContext:
 
     eval_fn: Any
     train_fn: Any
@@ -60,11 +68,10 @@ class TrainingContext:
     eval_freq: int = 5000
 
     def __call__(self, logger, model, opt):
+        out = self.eval_fn(model, self.test_dl, self.train_fn)
+        logger.log_info(ValidationInfo(0, 0, out))
 
         for epoch in range(self.epochs):
-
-            out = self.eval_fn(model, self.test_dl, self.train_fn)
-            logger.log_info(ValidationInfo(0, 0, out))
 
             for (batch_idx, (state, output)) in enumerate(self.train_dl):
                 opt.zero_grad()
