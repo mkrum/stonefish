@@ -255,6 +255,7 @@ class CChessEnvTorch(CChessEnv):
             torch.FloatTensor(done),
         )
 
+
 class CChessEnvTorchTwoPlayer(CChessEnv):
     def reset(self):
         states, mask = super().reset()
@@ -268,7 +269,7 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
 
         rewards[(self.t > self.max_step)] = self.draw_reward
 
-        done = (done | torch.BoolTensor(self.t > self.max_step))
+        done = done | torch.BoolTensor(self.t > self.max_step)
 
         self.reset_boards(done)
 
@@ -280,6 +281,7 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
             torch.FloatTensor(rewards),
             torch.FloatTensor(done),
         )
+
 
 class TTTEnvTwoPlayer:
     def __init__(self, n):
@@ -305,7 +307,7 @@ class TTTEnvTwoPlayer:
 
         for (i, a) in enumerate(action):
             a = np.array([a.item()])
-            
+
             current_player = self._envs[i].get_state.current_player()
             out = self._envs[i].step(a)
 
@@ -325,6 +327,7 @@ class TTTEnvTwoPlayer:
             torch.FloatTensor(rewards),
             torch.BoolTensor(dones),
         )
+
 
 class TTTEnv:
     def __init__(self, n):

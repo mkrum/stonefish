@@ -23,6 +23,7 @@ def test_tttenv():
         actions = random_action(legal_mask)
         next_state, legal_mask, rewards, dones = env.step(actions)
 
+
 def test_twoplayer():
     env = TTTEnvTwoPlayer(2)
 
@@ -53,6 +54,7 @@ def test_twoplayer():
 
     print(history.done)
     print(history.reward)
+
 
 if __name__ == "__main__":
     test_twoplayer()

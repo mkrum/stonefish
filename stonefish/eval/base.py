@@ -89,6 +89,7 @@ def seq_eval_model(model, datal, train_fn, max_batch=20):
     m_loss = np.mean(losses)
     return [TestInfo("ACC", acc.item()), TestInfo("loss", m_loss)]
 
+
 def random_action(masks):
     masks = masks.numpy()
     probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
@@ -96,6 +97,7 @@ def random_action(masks):
     for (i, p) in enumerate(probs):
         actions[i] = np.random.choice(9, p=p)
     return torch.LongTensor(actions)
+
 
 def eval_perf(model):
     env = TTTEnvTwoPlayer(1)

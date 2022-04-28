@@ -121,16 +121,18 @@ class RolloutTensor:
     def selfplay_decay_(self, gamma, values) -> "RolloutTensor":
 
         for i in reversed(range(self.reward.shape[1] - 1)):
-            self.reward[:, i] -= ~self.done[:, i] * (self.done[:, i+1] * self.reward[:, i+1])
+            self.reward[:, i] -= ~self.done[:, i] * (
+                self.done[:, i + 1] * self.reward[:, i + 1]
+            )
         i = self.reward.shape[1] - 1
 
         self.reward[:, i] += ~self.done[:, i] * gamma * -1 * values
-        
+
         i -= 2
         while i >= 0:
-            self.reward[:, i] = (
-                    self.reward[:, i] + ~(self.done[:, i] | self.done[:, i+1]) * gamma * (self.reward[:, i + 2])
-            )
+            self.reward[:, i] = self.reward[:, i] + ~(
+                self.done[:, i] | self.done[:, i + 1]
+            ) * gamma * (self.reward[:, i + 2])
             i -= 2
 
         i = self.reward.shape[1] - 2
@@ -139,8 +141,7 @@ class RolloutTensor:
 
         i -= 2
         while i >= 0:
-            self.reward[:, i] = (
-                    self.reward[:, i] + ~(self.done[:, i] | self.done[:, i+1]) * gamma * (self.reward[:, i + 2])
-            )
+            self.reward[:, i] = self.reward[:, i] + ~(
+                self.done[:, i] | self.done[:, i + 1]
+            ) * gamma * (self.reward[:, i + 2])
             i -= 2
-

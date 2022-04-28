@@ -71,7 +71,7 @@ class RLContext:
             decay_values = model.Q_value(
                 history.next_state[:, -1], history.action[:, -1]
             )
-            
+
             if self.selfplay:
                 history.selfplay_decay_(0.99, decay_values.flatten())
             else:
