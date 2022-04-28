@@ -298,7 +298,7 @@ class ACBase(nn.Module):
         ).to(self.device)
 
         self.policy.load_state_dict(
-            torch.load("/nfs/cmove/model_2.pth", map_location=self.device)
+            torch.load("/nfs/cmove/model_6.pth", map_location=self.device)
         )
 
         self.Q = nn.Sequential(

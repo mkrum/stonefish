@@ -1,6 +1,6 @@
 
 env: !CChessEnvTorch()
-    n: 16
+    n: 128
     draw_reward: -1
 
 model: !ACBase()

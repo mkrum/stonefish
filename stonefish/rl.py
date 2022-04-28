@@ -57,7 +57,7 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
 @dataclass
 class RLContext:
 
-    steps: int = 64
+    steps: int = 16
     iters: int = int(1e5)
 
     def __call__(self, logger, model, opt, env):
