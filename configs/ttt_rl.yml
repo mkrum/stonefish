@@ -1,6 +1,6 @@
 
 env: !TTTEnv()
-    n: 16
+    n: 64
 
 input_rep: !BoardRep
 output_rep: !MoveRep

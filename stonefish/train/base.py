@@ -14,7 +14,7 @@ def train_step(model, state, output):
     model.train()
 
     probs = model(state, output)
-    loss = F.nll_loss(probs, output.to(probs.device).flatten())
+    loss = F.cross_entropy(probs, output.to(probs.device).flatten())
     return loss
 
 
@@ -31,9 +31,8 @@ def seq_train_step(model, state, output):
     probs = probs[output != -1]
     output = output[output != -1]
 
-    loss = F.nll_loss(probs, output.flatten().to(probs.device))
+    loss = F.cross_entropy(probs, output.flatten().to(probs.device))
     return loss
-
 
 def mask_train_step(model, state, output):
     model.train()
@@ -53,7 +52,7 @@ def mask_train_step(model, state, output):
     probs = probs[output != -1]
     output = output[output != -1]
 
-    loss = F.nll_loss(probs, output.flatten().to(probs.device))
+    loss = F.cross_entropy(probs, output.flatten().to(probs.device))
     return loss
 
 

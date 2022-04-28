@@ -35,9 +35,8 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
 
         next_state, next_legal_mask, reward, done = env.step(action)
 
-        next_state = torch.LongTensor(next_state)
-        reward = torch.FloatTensor(reward).view(-1, 1)
-        done = torch.BoolTensor(done).view(-1, 1)
+        reward = reward.view(-1, 1)
+        done = done.view(-1, 1).bool()
 
         action = action.unsqueeze(1)
         history = history.add(
@@ -93,10 +92,6 @@ class RLContext:
 
             full_logits, values = model(flat_state, flat_action, logit_mask=flat_mask)
 
-            # logits = batched_index_select(
-            #    full_logits, 2, flat_action[:, 1:].unsqueeze(-1)
-            # )
-            # logits = logits.squeeze(-1)
             logits = torch.gather(full_logits, 1, flat_action.unsqueeze(1))
 
             opt.zero_grad()
@@ -137,6 +132,5 @@ if __name__ == "__main__":
     opt = config["opt"](model.parameters())
 
     env = config["env"]()
-
     ctx = RLContext()
     ctx(logger, model, opt, env)

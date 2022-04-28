@@ -174,12 +174,10 @@ class BaseModel(nn.Module):
         out = self._transformer_pass(pos_embed_state, tgt_embed, mask, tgt_mask)
         prelogits = self.to_dist(out)
 
-        prelogits = prelogits[:, :-1, :]
+        logits = logits[:, :-1, :]
 
         if logit_mask is not None:
-            prelogits = prelogits * logit_mask + (1 - logit_mask) * -1e8
-
-        logits = self.out_act(prelogits)
+            logits = logits * logit_mask + (1 - logit_mask) * -1e8
 
         if return_hidden:
             return out, logits
@@ -274,7 +272,6 @@ class ClassModel(nn.Module):
             nn.Linear(1024, 1024),
             nn.ReLU(),
             nn.Linear(1024, output_rep.width()),
-            nn.LogSoftmax(dim=1),
         ).to(self.device)
 
     def forward(self, state, action):
@@ -294,40 +291,42 @@ class ACBase(nn.Module):
     ):
         super().__init__()
         self.device = device
-        self.policy = BaseModel(
+        self.policy = ClassModel(
             device,
             input_rep,
             output_rep,
-            emb_dim=32,
-            num_encoder_layers=3,
-            num_decoder_layers=3,
         ).to(self.device)
-        self.value = nn.Linear(32, 1).to(self.device)
 
-        if load_policy:
-            self.policy.load_state_dict(
-                torch.load(load_policy, map_location=self.device)
-            )
+        self.policy.load_state_dict(
+            torch.load("/nfs/cmove/model_2.pth", map_location=self.device)
+        )
 
-        if load_value:
-            self.policy.load_state_dict(
-                torch.load(load_value, map_location=self.device)
-            )
+        self.Q = nn.Sequential(
+            nn.Linear(input_rep.width(), 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+        )
+        self.act = F.log_softmax
 
     def forward(self, state, action, logit_mask=None):
-        out, logits = self.policy.forward(
-            state, action, logit_mask=logit_mask, return_hidden=True
-        )
-        Q_values = self.value(out[:, -1, :])
+        state = state.to(self.device).long()
+        logits = self.act(self.policy(state, action) * logit_mask + (1 - logit_mask) * -1e8)
+        Q_values = self.Q(state.float())
         return logits, Q_values
 
     def Q_value(self, state, action):
-        out, _ = self.policy.forward(state, action, return_hidden=True)
-        return self.value(out[:, -1, :])
+        state = state.to(self.device).float()
+        return self.Q(state)
 
     @torch.no_grad()
     def sample(self, state, move_mask=None):
-        return self.policy.sample(state, max_len=2, move_mask=move_mask)
+        state = state.to(self.device).long()
+        move_mask = move_mask.to(self.device)
+        logits = self.policy(state, None)
+        logits = self.act(logits * move_mask + (1 - move_mask) * -1e8)
+        return Categorical(logits=logits).sample()
 
 
 class SimpleRL(nn.Module):
@@ -338,16 +337,20 @@ class SimpleRL(nn.Module):
         super().__init__()
         self.device = device
         self.policy = nn.Sequential(
-            nn.Linear(27, 27),
+            nn.Linear(27, 128),
             nn.Tanh(),
-            nn.Linear(27, 9),
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 9),
         )
         self.act = F.log_softmax
 
         self.Q = nn.Sequential(
-            nn.Linear(27, 27),
+            nn.Linear(27, 128),
             nn.ReLU(),
-            nn.Linear(27, 1),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
         )
 
     def forward(self, state, action, logit_mask=None):

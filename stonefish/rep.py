@@ -7,7 +7,7 @@ import chess
 import torch
 import numpy as np
 
-from chessenv import CBoard
+from chessenv import CBoard, CMove
 
 
 class EnumRep:
@@ -337,56 +337,48 @@ class MoveRep(TupleEnum):
 
         return move
 
-
-class MoveEnum(EnumRep):
+@dataclass
+class MoveEnum:
     """
-    Set of tokens that represent UCI moves
-
-    These tokens include:
-        1) Every square, ('e2', d2')
-        2) Every possible promotion move, ('h1q', a8r')
+    Wrapper for CMove
     """
 
-    # Start with all the possible rows and columns on a chess board
-    _columns = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    _rows = list(map(str, range(1, 9)))
-    # Convert these into a list of all of the squares
-    _squares = list(
-        map(lambda x: x[0] + x[1], list(itertools.product(_columns, _rows)))
-    )
+    data: CMove
 
-    # Get all of the possible promotion pieces
-    _promotion_pieces = ["r", "n", "b", "q"]
-    # Get all of the possible promotion moves
-    _top_promotions = list(
-        map(
-            lambda x: "".join(x),
-            list(itertools.product(_columns, ["1"], _promotion_pieces)),
-        )
-    )
-    _bottom_promotions = list(
-        map(
-            lambda x: "".join(x),
-            list(itertools.product(_columns, ["8"], _promotion_pieces)),
-        )
-    )
+    @classmethod
+    def from_str(cls, str_value: str):
+        return cls(CMove.from_str(str_value))
 
-    # All of the possible tokens in the move space.
-    _pairs = itertools.product(
-        _squares, _squares + _top_promotions + _bottom_promotions
-    )
-    _pairs = list(filter(lambda x: x[0] != x[1], _pairs))
-    _moves = list(map(lambda x: "".join(x), _pairs))
+    def to_str(self) -> str:
+        try:
+            return self.data.to_str()
+        except:
+            return "<invalid>"
 
-    _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_moves)}
-    _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_moves)}
+    def __str__(self) -> str:
+        return self.to_str()
+
+    @classmethod
+    def from_int(cls, int_value: int):
+        return cls(CMove.from_int(int_value))
+
+    def to_int(self) -> int:
+        """Convert representation into a integer"""
+        return self.data.to_int()
+
+    def __int__(self) -> int:
+        return self.to_int()
+
+    @classmethod
+    def size(cls):
+        return 64 * 88
 
     def width(self):
-        return len(MoveEnum._moves)
+        return 64 * 88
 
     @classmethod
     def from_tensor(cls, moves):
-        return cls(cls._moves[moves.item()])
+        return cls(CMove.from_int(moves.item()))
 
     def to_tensor(self):
         return torch.LongTensor([self.to_int()])

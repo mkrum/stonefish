@@ -13,6 +13,7 @@ from open_spiel.python.rl_environment import Environment, StepType
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
+from chessenv import CChessEnv, CMove
 
 
 @dataclass
@@ -234,6 +235,18 @@ class StackedEnv:
         out = [s.get() for s in self.state_qs]
         states, rewards, dones = zip(*out)
         return torch.stack(states), torch.stack(rewards), torch.stack(dones)
+
+class CChessEnvTorch(CChessEnv):
+
+    def reset(self):
+        states, mask = super().reset()
+        return torch.LongTensor(states), torch.FloatTensor(mask)
+
+    def step(self, actions):
+        actions = actions.cpu().numpy()
+        # TODO: Fix this
+        states, mask, rewards, done = super().step([CMove.from_int(a).to_str() for a in actions])
+        return torch.LongTensor(states), torch.FloatTensor(mask), torch.FloatTensor(rewards), torch.FloatTensor(done)
 
 
 class TTTEnv:

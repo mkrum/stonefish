@@ -46,6 +46,12 @@ class ChessData(Dataset):
 
         board_tokens = self.input_rep.from_fen(board_fen)
         move = self.output_rep.from_str(actions)
+
+        try:
+            move.to_str()
+        except:
+            import pdb; pdb.set_trace()
+
         return board_tokens.to_tensor(), move.to_tensor()
 
 
