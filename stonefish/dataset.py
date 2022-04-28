@@ -50,7 +50,9 @@ class ChessData(Dataset):
         try:
             move.to_str()
         except:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
 
         return board_tokens.to_tensor(), move.to_tensor()
 

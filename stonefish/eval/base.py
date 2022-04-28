@@ -9,6 +9,8 @@ from stonefish.rep import MoveToken, MoveRep, BoardRep
 from chessplotlib import plot_board, plot_move, mark_move
 from mllg import TestInfo
 
+from stonefish.env import CChessEnvTorch, TTTEnvTwoPlayer
+
 
 def print_example(model, states, actions, infer):
     for (s, a, i) in list(zip(states, actions, infer))[:16]:
@@ -87,39 +89,38 @@ def seq_eval_model(model, datal, train_fn, max_batch=20):
     m_loss = np.mean(losses)
     return [TestInfo("ACC", acc.item()), TestInfo("loss", m_loss)]
 
+def random_action(masks):
+    masks = masks.numpy()
+    probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
+    actions = np.zeros(len(masks))
+    for (i, p) in enumerate(probs):
+        actions[i] = np.random.choice(9, p=p)
+    return torch.LongTensor(actions)
 
-def move_vis(model, data, N):
+def eval_perf(model):
+    env = TTTEnvTwoPlayer(1)
 
+    N = 10
+    wins = 0
     for _ in range(N):
-        state, action = data[np.random.choice(range(len(data)))]
 
-        board = BoardRep.from_tensor(state).to_board()
-        move = MoveRep.from_tensor(action).to_uci()
+        state, legal_mask = env.reset()
 
-        state = state.unsqueeze(0)
+        player_id = 0
+        done = [False]
+        while not done[0]:
 
-        legal_moves = list(board.legal_moves)
+            if player_id == 0:
+                action = model.sample(state, legal_mask)
+            elif player_id == 1:
+                action = random_action(legal_mask)
+            else:
+                exit()
 
-        action_stack = torch.stack(
-            [MoveRep.from_uci(m).to_tensor() for m in legal_moves]
-        )
-        state = state.repeat(action_stack.shape[0], 1)
+            state, legal_mask, reward, done = env.step(action)
+            player_id = (player_id + 1) % 2
 
-        act = nn.Softmax(dim=0)
-        with torch.no_grad():
-            out = model.forward(state, action_stack)
+        if reward[0] == 1.0 and player_id == 1:
+            wins += 1.0
 
-            logits = torch.zeros(out.shape[0])
-            for (i, o) in enumerate(out):
-                logits[i] += o[0, action_stack[i, 0]] + o[1, action_stack[i, 1]]
-
-        probs = act(logits)
-
-        fig, ax = plt.subplots(1, 1)
-
-        plot_board(ax, board, checkers=True)
-        mark_move(ax, move)
-        for i in range(len(legal_moves)):
-            plot_move(ax, board, legal_moves[i], alpha=probs[i].item())
-
-        plt.show()
+    print(wins / N)

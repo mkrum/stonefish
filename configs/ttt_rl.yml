@@ -1,4 +1,7 @@
 
+rl_context: !RLContext()
+    steps: 32
+
 env: !TTTEnv()
     n: 64
 

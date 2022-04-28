@@ -1,13 +1,14 @@
 
+rl_context: !RLContext()
+    steps: 32
+
 env: !CChessEnvTorch()
-    n: 128
+    n: 512
     draw_reward: -1
 
 model: !ACBase()
     input_rep: !CBoardRep
     output_rep: !MoveEnum
-
-#load_policy: /nfs/fishtank/anotherone/model_1.pth
 
 opt: !Adam()
     lr: !!float 1e-4

@@ -260,10 +260,10 @@ class ClassModel(nn.Module):
         self.input_rep = input_rep
         self.output_rep = output_rep
 
-        self.embed = nn.Embedding(30, 2).to(self.device)
+        self.embed = nn.Embedding(30, 8).to(self.device)
 
         self.model = nn.Sequential(
-            nn.Linear(2 * 69, 1024),
+            nn.Linear(8 * 69, 1024),
             nn.ReLU(),
             nn.Linear(1024, 1024),
             nn.ReLU(),
@@ -271,13 +271,27 @@ class ClassModel(nn.Module):
             nn.ReLU(),
             nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.Linear(1024, output_rep.width()),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 2048),
+            nn.ReLU(),
+            nn.Linear(2048, 4096),
+            nn.ReLU(),
+            nn.Linear(4096, output_rep.width()),
         ).to(self.device)
 
     def forward(self, state, action):
         state = state.to(self.device)
         embedded_state = self.embed(state)
-        flat_es = embedded_state.view(-1, embedded_state.shape[1] * 2)
+        flat_es = embedded_state.view(-1, embedded_state.shape[1] * 8)
         return self.model(flat_es)
 
     def inference(self, state, action):
@@ -298,7 +312,7 @@ class ACBase(nn.Module):
         ).to(self.device)
 
         self.policy.load_state_dict(
-            torch.load("/nfs/cmove/model_6.pth", map_location=self.device)
+            torch.load("/nfs/bigclass/model_3.pth", map_location=self.device)
         )
 
         self.Q = nn.Sequential(
@@ -312,7 +326,9 @@ class ACBase(nn.Module):
 
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).long()
-        logits = self.act(self.policy(state, action) * logit_mask + (1 - logit_mask) * -1e8)
+        logits = self.act(
+            self.policy(state, action) * logit_mask + (1 - logit_mask) * -1e8
+        )
         Q_values = self.Q(state.float())
         return logits, Q_values
 

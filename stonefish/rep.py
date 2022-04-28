@@ -337,6 +337,7 @@ class MoveRep(TupleEnum):
 
         return move
 
+
 @dataclass
 class MoveEnum:
     """

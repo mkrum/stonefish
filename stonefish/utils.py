@@ -43,8 +43,15 @@ class RolloutTensor:
 
     def add(self, state, action, next_state, reward, done, mask) -> "RolloutTensor":
 
+        state = state.unsqueeze(1)
+        action = action.unsqueeze(1)
+        next_state = state.unsqueeze(1)
+        reward = reward.unsqueeze(1)
+        done = done.unsqueeze(1).bool()
+        mask = mask.unsqueeze(1)
+
         if self.is_empty():
-            return RolloutTensor(state, action, next_state, reward, done, mask)
+            return self.__class__(state, action, next_state, reward, done, mask)
 
         new_state = torch.cat((self.state, state), 1)
         new_action = torch.cat((self.action, action), 1)
@@ -52,7 +59,7 @@ class RolloutTensor:
         new_reward = torch.cat((self.reward, reward), 1)
         new_done = torch.cat((self.done, done), 1)
         new_mask = torch.cat((self.mask, mask), 1)
-        return RolloutTensor(
+        return self.__class__(
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
 
@@ -67,7 +74,7 @@ class RolloutTensor:
         new_reward = torch.cat((self.reward, other.reward), 1)
         new_done = torch.cat((self.done, other.done), 1)
         new_mask = torch.cat((self.mask, other.mask), 1)
-        return RolloutTensor(
+        return self.__class__(
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
 
@@ -90,6 +97,50 @@ class RolloutTensor:
         new_reward = self.reward.to(device)
         new_done = self.done.to(device)
         new_mask = self.mask.to(device)
-        return RolloutTensor(
+        return self.__class__(
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
+
+    def get_data(self):
+        flat_state = self.state.view(-1, *self.state.shape[2:])
+        flat_next_state = self.next_state.view(-1, *self.next_state.shape[2:])
+        flat_action = self.action.view(-1, 1)
+        flat_reward = self.reward.view(-1, 1)
+        flat_done = self.done.view(-1, 1)
+        flat_mask = self.mask.view(-1, *self.mask.shape[2:])
+
+        return (
+            flat_state,
+            flat_next_state,
+            flat_action,
+            flat_reward,
+            flat_done,
+            flat_mask,
+        )
+
+    def selfplay_decay_(self, gamma, values) -> "RolloutTensor":
+
+        for i in reversed(range(self.reward.shape[1] - 1)):
+            self.reward[:, i] -= ~self.done[:, i] * (self.done[:, i+1] * self.reward[:, i+1])
+        i = self.reward.shape[1] - 1
+
+        self.reward[:, i] += ~self.done[:, i] * gamma * -1 * values
+        
+        i -= 2
+        while i >= 0:
+            self.reward[:, i] = (
+                    self.reward[:, i] + ~(self.done[:, i] | self.done[:, i+1]) * gamma * (self.reward[:, i + 2])
+            )
+            i -= 2
+
+        i = self.reward.shape[1] - 2
+
+        self.reward[:, i] += ~self.done[:, i] * gamma * values
+
+        i -= 2
+        while i >= 0:
+            self.reward[:, i] = (
+                    self.reward[:, i] + ~(self.done[:, i] | self.done[:, i+1]) * gamma * (self.reward[:, i + 2])
+            )
+            i -= 2
+

@@ -34,6 +34,7 @@ def seq_train_step(model, state, output):
     loss = F.cross_entropy(probs, output.flatten().to(probs.device))
     return loss
 
+
 def mask_train_step(model, state, output):
     model.train()
 

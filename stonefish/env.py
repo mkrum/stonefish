@@ -236,8 +236,8 @@ class StackedEnv:
         states, rewards, dones = zip(*out)
         return torch.stack(states), torch.stack(rewards), torch.stack(dones)
 
-class CChessEnvTorch(CChessEnv):
 
+class CChessEnvTorch(CChessEnv):
     def reset(self):
         states, mask = super().reset()
         return torch.LongTensor(states), torch.FloatTensor(mask)
@@ -245,9 +245,86 @@ class CChessEnvTorch(CChessEnv):
     def step(self, actions):
         actions = actions.cpu().numpy()
         # TODO: Fix this
-        states, mask, rewards, done = super().step([CMove.from_int(a).to_str() for a in actions])
-        return torch.LongTensor(states), torch.FloatTensor(mask), torch.FloatTensor(rewards), torch.FloatTensor(done)
+        states, mask, rewards, done = super().step(
+            [CMove.from_int(a).to_str() for a in actions]
+        )
+        return (
+            torch.LongTensor(states),
+            torch.FloatTensor(mask),
+            torch.FloatTensor(rewards),
+            torch.FloatTensor(done),
+        )
 
+class CChessEnvTorchTwoPlayer(CChessEnv):
+    def reset(self):
+        states, mask = super().reset()
+        return torch.LongTensor(states), torch.FloatTensor(mask)
+
+    def step(self, actions):
+        actions = actions.cpu().numpy()
+        moves = CMoves.from_moves([CMove.from_int(a) for a in actions])
+
+        done, rewards = self.push_moves(moves.to_array())
+
+        rewards[(self.t > self.max_step)] = self.draw_reward
+
+        done = (done | torch.BoolTensor(self.t > self.max_step))
+
+        self.reset_boards(done)
+
+        states = self.get_state()
+        mask = self.get_mask()
+        return (
+            torch.LongTensor(states),
+            torch.FloatTensor(mask),
+            torch.FloatTensor(rewards),
+            torch.FloatTensor(done),
+        )
+
+class TTTEnvTwoPlayer:
+    def __init__(self, n):
+        self.n = n
+        self._envs = [Environment(pyspiel.load_game("tic_tac_toe")) for _ in range(n)]
+
+    def reset(self):
+        out = [e.reset() for e in self._envs]
+        states = [o.observations["info_state"][0] for o in out]
+
+        legal_mask = np.zeros((self.n, 9))
+        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
+            for a in la:
+                legal_mask[i, a] = 1.0
+
+        return torch.LongTensor(np.stack(states)), torch.FloatTensor(legal_mask)
+
+    def step(self, action):
+        states = []
+        legal_mask = np.zeros((self.n, 9))
+        rewards = np.zeros((self.n,))
+        dones = np.zeros((self.n,))
+
+        for (i, a) in enumerate(action):
+            a = np.array([a.item()])
+            
+            current_player = self._envs[i].get_state.current_player()
+            out = self._envs[i].step(a)
+
+            if out.step_type == StepType.LAST:
+                dones[i] = 1.0
+                rewards[i] = out.rewards[current_player]
+                out = self._envs[i].reset()
+
+            states.append(out.observations["info_state"][0])
+
+            for a in out.observations["legal_actions"]:
+                legal_mask[i, a] = 1.0
+
+        return (
+            torch.LongTensor(np.stack(states)),
+            torch.FloatTensor(legal_mask),
+            torch.FloatTensor(rewards),
+            torch.BoolTensor(dones),
+        )
 
 class TTTEnv:
     def __init__(self, n):
@@ -297,6 +374,6 @@ class TTTEnv:
         return (
             torch.LongTensor(np.stack(states)),
             torch.FloatTensor(legal_mask),
-            rewards,
-            dones,
+            torch.FloatTensor(rewards),
+            torch.BoolTensor(dones),
         )
