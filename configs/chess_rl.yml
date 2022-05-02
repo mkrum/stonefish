@@ -1,9 +1,11 @@
 
 rl_context: !RLContext()
-    steps: 32
+    steps: 2
+    eval_fn: !ChessEvalContext()
+    eval_freq: 200
 
 env: !CChessEnvTorch()
-    n: 512
+    n: 8
     draw_reward: -1
 
 model: !ACBase()
@@ -11,4 +13,3 @@ model: !ACBase()
     output_rep: !MoveEnum
 
 opt: !Adam()
-    lr: !!float 1e-4

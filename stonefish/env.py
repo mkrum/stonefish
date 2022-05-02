@@ -13,7 +13,7 @@ from open_spiel.python.rl_environment import Environment, StepType
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-from chessenv import CChessEnv, CMove
+from chessenv import CChessEnv, CMove, CMoves
 
 
 @dataclass
@@ -243,11 +243,11 @@ class CChessEnvTorch(CChessEnv):
         return torch.LongTensor(states), torch.FloatTensor(mask)
 
     def step(self, actions):
-        actions = actions.cpu().numpy()
+        actions = np.int32(actions.cpu().numpy())
+
         # TODO: Fix this
-        states, mask, rewards, done = super().step(
-            [CMove.from_int(a).to_str() for a in actions]
-        )
+        states, mask, rewards, done = super().step(actions)
+
         return (
             torch.LongTensor(states),
             torch.FloatTensor(mask),
@@ -262,16 +262,14 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
         return torch.LongTensor(states), torch.FloatTensor(mask)
 
     def step(self, actions):
-        actions = actions.cpu().numpy()
-        moves = CMoves.from_moves([CMove.from_int(a) for a in actions])
+        actions = np.int32(actions.cpu().numpy())
+        done, rewards = self.push_moves(actions)
 
-        done, rewards = self.push_moves(moves.to_array())
+        rewards[(self.t > self.max_step)] = 0
 
-        rewards[(self.t > self.max_step)] = self.draw_reward
+        done = torch.BoolTensor(done) | torch.BoolTensor(self.t > self.max_step)
 
-        done = done | torch.BoolTensor(self.t > self.max_step)
-
-        self.reset_boards(done)
+        self.reset_boards(done.numpy())
 
         states = self.get_state()
         mask = self.get_mask()
@@ -279,7 +277,7 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
             torch.LongTensor(states),
             torch.FloatTensor(mask),
             torch.FloatTensor(rewards),
-            torch.FloatTensor(done),
+            done,
         )
 
 
@@ -333,6 +331,59 @@ class TTTEnv:
     def __init__(self, n):
         self.n = n
         self._envs = [Environment(pyspiel.load_game("tic_tac_toe")) for _ in range(n)]
+
+    def reset(self):
+        out = [e.reset() for e in self._envs]
+        states = [o.observations["info_state"][0] for o in out]
+
+        legal_mask = np.zeros((self.n, 9))
+        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
+            for a in la:
+                legal_mask[i, a] = 1.0
+
+        return torch.LongTensor(np.stack(states)), torch.FloatTensor(legal_mask)
+
+    def step(self, action):
+        states = []
+        legal_mask = np.zeros((self.n, 9))
+        rewards = np.zeros((self.n,))
+        dones = np.zeros((self.n,))
+        for (i, a) in enumerate(action):
+            a = np.array([a.item()])
+
+            out = self._envs[i].step(a)
+
+            if out.step_type == StepType.LAST:
+                dones[i] = 1.0
+                rewards[i] = out.rewards[0]
+                out = self._envs[i].reset()
+            else:
+                response = random.sample(out.observations["legal_actions"][1], 1)
+
+                out = self._envs[i].step(np.array(response))
+
+                if out.step_type == StepType.LAST:
+                    dones[i] = 1.0
+                    rewards[i] = out.rewards[0]
+                    out = self._envs[i].reset()
+
+            states.append(out.observations["info_state"][0])
+
+            for a in out.observations["legal_actions"]:
+                legal_mask[i, a] = 1.0
+
+        return (
+            torch.LongTensor(np.stack(states)),
+            torch.FloatTensor(legal_mask),
+            torch.FloatTensor(rewards),
+            torch.BoolTensor(dones),
+        )
+
+
+class ChessSpielEnv:
+    def __init__(self, n):
+        self.n = n
+        self._envs = [Environment(pyspiel.load_game("chess")) for _ in range(n)]
 
     def reset(self):
         out = [e.reset() for e in self._envs]

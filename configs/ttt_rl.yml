@@ -1,6 +1,9 @@
 
 rl_context: !RLContext()
-    steps: 32
+    steps: 3
+    eval_fn: !EvalContext()
+        eval_env: !TTTEnvTwoPlayer()
+            n: 1
 
 env: !TTTEnv()
     n: 64

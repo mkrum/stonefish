@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from collections import deque
 from typing import Any
@@ -5,6 +6,9 @@ import stonefish.config
 
 import torch
 import torch.nn.functional as F
+import torch.optim as optim
+import torch.multiprocessing as mp
+import torch.distributed as dist
 import numpy as np
 
 from mllg import LogWriter
@@ -13,7 +17,6 @@ from yamlargs.parser import load_config_and_create_parser, parse_args_into_confi
 from stonefish.mask import MoveMask
 from stonefish.utils import RolloutTensor
 from stonefish.rep import MoveRep
-from stonefish.eval.base import eval_perf
 
 
 def generate_rollout(env, model, n_steps, initial_state, legal_mask):
@@ -24,7 +27,7 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
 
     for _ in range(n_steps):
         with torch.no_grad():
-            action = model.sample(state, move_mask=legal_mask)
+            action, legal_mask = model.sample(state, legal_mask)
 
         next_state, next_legal_mask, reward, done = env.step(action)
 
@@ -47,18 +50,22 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
 class RLContext:
 
     steps: int
+    eval_fn: Any
     iters: int = int(1e5)
     selfplay: bool = False
     eval_freq: int = 100
 
-    def __call__(self, logger, model, opt, env):
+    def __call__(self, logger, model, opt, env, rank, world_size):
 
-        eval_perf(model)
+        # if rank == 0:
+        #    self.eval_fn(model, 0)
+
+        dist.barrier()
 
         state, legal_mask = env.reset()
         progress = deque(maxlen=1000)
-        pl_hist = deque(maxlen=1000)
-        vl_hist = deque(maxlen=1000)
+        pl_hist = deque(maxlen=100)
+        vl_hist = deque(maxlen=100)
 
         for it in range(int(self.iters)):
 
@@ -68,9 +75,7 @@ class RLContext:
 
             history = history.to(model.device)
 
-            decay_values = model.Q_value(
-                history.next_state[:, -1], history.action[:, -1]
-            )
+            decay_values = model.value(state)
 
             if self.selfplay:
                 history.selfplay_decay_(0.99, decay_values.flatten())
@@ -86,16 +91,21 @@ class RLContext:
                 flat_mask,
             ) = history.get_data()
 
-            full_logits, values = model(flat_state, flat_action, logit_mask=flat_mask)
-            logits = torch.gather(full_logits, 1, flat_action)
+            logits, values = model(flat_state, flat_action, flat_mask)
 
             opt.zero_grad()
 
             value_loss = F.mse_loss(values, flat_reward)
-            policy_loss = -1.0 * torch.mean(flat_reward * logits)
+            policy_loss = -1.0 * torch.mean((flat_reward - values) * logits)
 
             loss = value_loss + policy_loss
             loss.backward()
+
+            if world_size > 1:
+                for param in model.parameters():
+                    dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+                    param.grad.data /= world_size
+
             opt.step()
 
             term_rewards = history.reward[history.done]
@@ -110,13 +120,47 @@ class RLContext:
                 flush=True,
             )
             if (it % self.eval_freq == 0) and (it > 0):
-                eval_perf(model)
-                logger.checkpoint(it, 0, model)
+                if rank == 0:
+                    self.eval_fn(model, it)
+                    logger.checkpoint(it, 0, model)
+
+                dist.barrier()
+
+
+def run(rank, world_size, config):
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "12355"
+
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+
+    device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
+
+    model = config["model"](device).to(device)
+
+    for param in model.parameters():
+        dist.all_reduce(param.data, op=dist.reduce_op.SUM)
+        param.data /= world_size
+
+    opt = optim.Adam(
+        [
+            {"params": model.policy.parameters(), "lr": 1e-4},
+            {"params": model.V.parameters(), "lr": 1e-3},
+        ],
+    )
+
+    env = config["env"]()
+    ctx = config["rl_context"]()
+    logger = LogWriter("/tmp/garbo")
+    ctx(logger, model, opt, env, rank, world_size)
+
+    dist.destroy_process_group()
 
 
 if __name__ == "__main__":
     config, parser = load_config_and_create_parser()
     parser.add_argument("log_path")
+    parser.add_argument("--np", default=1)
     args = parser.parse_args()
 
     config = parse_args_into_config(config, args)
@@ -129,10 +173,8 @@ if __name__ == "__main__":
     with open(f"{args.log_path}/config.yml", "w") as cfg_save:
         cfg_save.write(config.to_yaml())
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = config["model"](device).to(device)
-    opt = config["opt"](model.parameters())
-
-    env = config["env"]()
-    ctx = config["rl_context"]()
-    ctx(logger, model, opt, env)
+    world_size = args.np
+    if world_size > 1:
+        mp.spawn(run, args=(world_size, config), nprocs=world_size, join=True)
+    else:
+        run(0, 1, config)

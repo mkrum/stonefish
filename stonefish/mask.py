@@ -1,107 +1,63 @@
 from dataclasses import dataclass
+import time
 from typing import Dict, Any
 import torch
+import numpy as np
 
-from chessenv.rep import CMove, CBoard
+from chessenv.rep import CMoves, CBoard, legal_mask_convert
 from stonefish.rep import MoveRep, MoveEnum
 
 
 @dataclass
 class MoveMask:
 
-    move_map: Dict
+    n: int
     tensor_map: Dict
-    masks: Any
 
     @classmethod
-    def from_env(cls, env):
-        moves = env.get_possible_moves()
+    def from_mask(cls, legal_mask):
 
-        tensor_map = {i: [] for i in range(len(moves))}
-        move_map = {i: [] for i in range(len(moves))}
+        tensor_map = {}
+        n = legal_mask.shape[0]
+        start = time.time()
 
-        for (i, move_stack) in enumerate(moves):
-            move_map[i] = move_stack.to_str()
-            for m in move_map[i]:
-                move_rep = MoveRep.from_str(m)
-                tensor_map[i].append(move_rep.to_tensor())
-            tensor_map[i] = torch.stack(tensor_map[i])
-        return cls(move_map, tensor_map, None)
+        tensor_map = legal_mask_convert(np.int32(legal_mask.cpu().numpy()))
+        for (k, v) in tensor_map.items():
+            tensor_map[k] = torch.LongTensor(v).to(legal_mask.device)
 
-    @classmethod
-    def from_data(cls, data, output):
+        return cls(n, tensor_map)
 
-        boards = []
-        for d in data:
-            boards.append(CBoard.from_arr(d))
+    def get_mask(self, tokens):
+        move_mask = torch.zeros((self.n, MoveRep.width())).to(self.tensor_map[0].device)
 
-        tensor_map = {i: [] for i in range(len(boards))}
-        move_map = {i: [] for i in range(len(boards))}
+        if tokens.shape[1] == 1:
+            for i in range(self.n):
+                move_mask[i, self.tensor_map[i][:, 1]] = 1.0
 
-        for (i, b) in enumerate(boards):
-            moves = list(map(str, b.board.legal_moves))
-            move_map[i] = moves
-            tensor_map[i] = [MoveRep.from_str(m).to_tensor() for m in moves] + [
-                output[i]
-            ]
+            return move_mask
 
-        for i in range(len(tensor_map)):
-            tensor_map[i] = torch.stack(tensor_map[i])
+        for i in range(self.n):
+            vals = self.tensor_map[i]
+            tok = tokens[i]
 
-        return cls(move_map, tensor_map, None)
+            valid = vals[tok[-1] == vals[:, tokens.shape[1] - 1]]
+            move_mask[i, valid[:, tokens.shape[1]]] = 1.0
 
-    def is_valid(self, move, i):
-        return move in self.move_map[i]
+        return move_mask
 
-    def mask(self, logits, tokens):
-
-        batch_size = logits.shape[0]
-
-        masks = torch.zeros((batch_size, MoveRep.width())).to(logits.device)
-
-        tensor_map = self.tensor_map
-        for i in range(batch_size):
-
-            mask_mask = (
-                torch.sum(tensor_map[i][:, : tokens.shape[1]].cuda() != tokens[i], -1)
-                > 0
-            )
-            tensor_map[i][mask_mask] = -100
-
-            mask_idx = tokens.shape[1]
-            for v in self.tensor_map[i]:
-                if v[mask_idx].item() != -100:
-                    masks[i, v[mask_idx].item()] = 1.0
-
-        logits = logits * masks + -1e8 * (1 - masks)
-
-        masks = masks.unsqueeze(1)
-        if self.masks is not None:
-            masks = torch.stack((self.masks, masks), dim=1)
-
-        return logits, MoveMask(self.move_map, self.tensor_map, masks)
-
-    def update_mask(self, tokens):
-
-        batch_size = tokens.shape[0]
-
-        masks = torch.zeros((batch_size, tokens.shape[1], MoveRep.width())).to(
-            tokens.device
+    def get_full_mask(self, tokens):
+        move_mask = torch.zeros((self.n, 2, MoveRep.width())).to(
+            self.tensor_map[0].device
         )
 
-        tensor_map = self.tensor_map
-        for mask_idx in range(tokens.shape[1]):
-            for i in range(batch_size):
+        for i in range(self.n):
+            vals = self.tensor_map[i]
+            for j in range(2):
+                tok = tokens[i]
 
-                tensor_map[i] = tensor_map[i].to(tokens.device)
+                valid = vals[tok[j] == vals[:, j]]
 
-                mask_mask = (
-                    torch.sum(tensor_map[i][:, :mask_idx] != tokens[i, :mask_idx], -1)
-                    > 0
-                )
-                tensor_map[i][mask_mask] = -100
+                for v in valid[:, j + 1]:
+                    move_mask[i, j, int(v.item())] = 1.0
 
-                for v in self.tensor_map[i]:
-                    if v[mask_idx].item() != -100:
-                        masks[i, mask_idx, v[mask_idx].item()] = 1.0
-        return masks
+        return move_mask

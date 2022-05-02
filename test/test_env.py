@@ -1,7 +1,7 @@
 from stonefish.env import TTTEnv, TTTEnvTwoPlayer
 import torch
 import numpy as np
-from stonefish.utils import TwoPlayerRolloutTensor
+from stonefish.utils import RolloutTensor
 
 
 def random_action(masks):
@@ -29,7 +29,7 @@ def test_twoplayer():
 
     state, legal_mask = env.reset()
 
-    history = TwoPlayerRolloutTensor.empty()
+    history = RolloutTensor.empty()
 
     for _ in range(10):
         action = random_action(legal_mask)
@@ -48,12 +48,7 @@ def test_twoplayer():
         state = next_state
         legal_mask = next_legal_mask
 
-    print(history.reward)
-    print(history.done)
-    history.decay_(0.99, 10 * torch.ones(2))
-
-    print(history.done)
-    print(history.reward)
+    history.selfplay_decay_(0.99, 10 * torch.ones(2))
 
 
 if __name__ == "__main__":

@@ -1,1 +1,1 @@
-from stonefish.eval.base import eval_model, eval_perf
+from stonefish.eval.base import eval_model, eval_against_random

@@ -337,6 +337,10 @@ class MoveRep(TupleEnum):
 
         return move
 
+    def to_cmove(self):
+        move = self.to_uci()
+        return CMove.from_move(move)
+
 
 @dataclass
 class MoveEnum:
