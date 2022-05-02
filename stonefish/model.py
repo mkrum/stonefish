@@ -288,14 +288,14 @@ class BaseModel(nn.Module):
         start_token = self.start_token.repeat(state.shape[0], 1)
         tokens = start_token.to(self.device)
 
-        memory = self.policy._encode(pos_embed_state, mask)
+        memory = self._encode(pos_embed_state, mask)
 
         for i in range(max_len):
             decode = self._action_embed(tokens)
             tgt_mask = torch.zeros(decode.shape[0], decode.shape[1]).bool()
             tgt_mask = tgt_mask.to(self.device)
 
-            out = self.policy._decode(memory, decode, tgt_mask)
+            out = self._decode(memory, decode, tgt_mask)
 
             logits = self.to_dist(out)[:, -1, :]
 
@@ -452,13 +452,17 @@ class TBased(nn.Module):
             num_encoder_layers=4,
         ).to(self.device)
 
-        # self.policy.load_state_dict(
-        #    torch.load("/nfs/fishtank/openai/model_1.pth", map_location=self.device)
-        # )
+        self.policy.load_state_dict(
+           torch.load("/nfs/chess_seq/model_1.pth", map_location=self.device)
+        )
         self.policy = self.policy.to(self.device)
 
         self.V = nn.Sequential(
             nn.Linear(emb_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
             nn.ReLU(),
             nn.Linear(128, 1),
         )

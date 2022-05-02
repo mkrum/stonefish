@@ -1,11 +1,11 @@
 
 rl_context: !RLContext()
-    steps: 2
+    steps: 128
     eval_fn: !ChessEvalContext()
     eval_freq: 200
 
 env: !CChessEnvTorch()
-    n: 8
+    n: 64
     draw_reward: -1
 
 model: !ACBase()

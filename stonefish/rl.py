@@ -57,8 +57,8 @@ class RLContext:
 
     def __call__(self, logger, model, opt, env, rank, world_size):
 
-        # if rank == 0:
-        #    self.eval_fn(model, 0)
+        if rank == 0:
+           self.eval_fn(model, 0)
 
         dist.barrier()
 
@@ -78,9 +78,9 @@ class RLContext:
             decay_values = model.value(state)
 
             if self.selfplay:
-                history.selfplay_decay_(0.99, decay_values.flatten())
+                history.selfplay_decay_(0.99, decay_values.flatten().detach())
             else:
-                history.decay_(0.99, decay_values.flatten())
+                history.decay_(0.99, decay_values.flatten().detach())
 
             (
                 flat_state,
@@ -96,9 +96,10 @@ class RLContext:
             opt.zero_grad()
 
             value_loss = F.mse_loss(values, flat_reward)
-            policy_loss = -1.0 * torch.mean((flat_reward - values) * logits)
+            policy_loss = -1.0 * torch.mean((flat_reward - values.detach()) * logits)
+            #policy_loss = -1.0 * torch.mean(flat_reward * logits)
 
-            loss = value_loss + policy_loss
+            loss = 0.5 * value_loss + policy_loss
             loss.backward()
 
             if world_size > 1:
@@ -160,7 +161,7 @@ def run(rank, world_size, config):
 if __name__ == "__main__":
     config, parser = load_config_and_create_parser()
     parser.add_argument("log_path")
-    parser.add_argument("--np", default=1)
+    parser.add_argument("--np", type=int, default=1)
     args = parser.parse_args()
 
     config = parse_args_into_config(config, args)

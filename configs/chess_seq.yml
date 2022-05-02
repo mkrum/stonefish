@@ -7,7 +7,7 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !ChessData()
             path: /nfs/one_train.csv 
-            input_rep: !BoardRep
+            input_rep: !CBoardRep
             output_rep: !MoveRep
         batch_size: 256
         shuffle: True
@@ -16,14 +16,17 @@ pretrain_context: !PreTrainContext()
     test_dl: !DataLoader()
         dataset: !ChessData()
             path: /nfs/one_test.csv 
-            input_rep: !BoardRep
+            input_rep: !CBoardRep
             output_rep: !MoveRep
         batch_size: 256
         shuffle: True
     
 model: !BaseModel()
-    input_rep: !BoardRep
+    input_rep: !CBoardRep
     output_rep: !MoveRep
+    emb_dim: 64
+    num_decoder_layers: 2
+    num_encoder_layers: 4
 
 opt: !Adam()
     lr: !!float 1e-4
