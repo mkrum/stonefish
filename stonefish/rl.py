@@ -1,7 +1,7 @@
 import os
+from typing import Any
 from dataclasses import dataclass
 from collections import deque
-from typing import Any
 import stonefish.config
 
 import torch
@@ -11,15 +11,43 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 import numpy as np
 
-from mllg import LogWriter
+from mllg import LogWriter, LossInfo, TrainStepInfo
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
 
 from stonefish.mask import MoveMask
 from stonefish.utils import RolloutTensor
 from stonefish.rep import MoveRep
+from stonefish.display import RLDisplay
 
 
 def generate_rollout(env, model, n_steps, initial_state, legal_mask):
+
+    state = initial_state
+
+    history = RolloutTensor.empty()
+
+    for _ in range(n_steps):
+        with torch.no_grad():
+            action, legal_mask = model.sample(state, legal_mask)
+
+        next_state, next_legal_mask, reward, done = env.step(action)
+
+        history = history.add(
+            state,
+            action,
+            next_state,
+            reward,
+            done,
+            legal_mask,
+        )
+
+        state = next_state
+        legal_mask = next_legal_mask
+
+    return history, state, legal_mask
+
+
+def mulit_player_generate_rollout(env, model_map, n_steps, initial_state, legal_mask):
 
     state = initial_state
 
@@ -54,33 +82,66 @@ class RLContext:
     iters: int = int(1e5)
     selfplay: bool = False
     eval_freq: int = 100
+    gamma: float = 0.99
+    value_weight: float = 0.5
+    entropy_weight: float = 0.01
+
+    def get_data(self, env, model, state, legal_mask):
+        history, state, legal_mask = generate_rollout(
+            env, model, self.steps, state, legal_mask
+        )
+
+        history = history.to(model.device)
+
+        decay_values = model.value(state)
+
+        if self.selfplay:
+            history.selfplay_decay_(self.gamma, decay_values.flatten().detach())
+        else:
+            history.decay_(self.gamma, decay_values.flatten().detach())
+
+        return history, state, legal_mask
+
+    def compute_loss(self, model, state, mask, action, reward):
+        logits, values = model(state, action, mask)
+
+        value_loss = F.mse_loss(values, reward)
+        policy_loss = -1.0 * torch.mean((reward - values.detach()) * logits)
+        entropy_loss = -torch.mean(torch.sum(logits * torch.exp(logits), dim=-1))
+
+        loss = (
+            policy_loss
+            + self.value_weight * value_loss
+            + self.entropy_weight * entropy_loss
+        )
+
+        losses = [
+            LossInfo("policy", policy_loss.item()),
+            LossInfo("value", value_loss.item()),
+            LossInfo("entropy", entropy_loss.item()),
+        ]
+
+        return loss, losses
+
+    def sync_gradients(self, model, world_size):
+
+        if world_size > 1:
+            for param in model.parameters():
+                dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+                param.grad.data /= world_size
 
     def __call__(self, logger, model, opt, env, rank, world_size):
 
         if rank == 0:
-           self.eval_fn(model, 0)
+            out = self.eval_fn(model, 0)
+            logger.log_info(out)
 
         dist.barrier()
 
         state, legal_mask = env.reset()
-        progress = deque(maxlen=1000)
-        pl_hist = deque(maxlen=100)
-        vl_hist = deque(maxlen=100)
 
         for it in range(int(self.iters)):
-
-            history, state, legal_mask = generate_rollout(
-                env, model, self.steps, state, legal_mask
-            )
-
-            history = history.to(model.device)
-
-            decay_values = model.value(state)
-
-            if self.selfplay:
-                history.selfplay_decay_(0.99, decay_values.flatten().detach())
-            else:
-                history.decay_(0.99, decay_values.flatten().detach())
+            history, state, legal_mask = self.get_data(env, model, state, legal_mask)
 
             (
                 flat_state,
@@ -91,46 +152,33 @@ class RLContext:
                 flat_mask,
             ) = history.get_data()
 
-            logits, values = model(flat_state, flat_action, flat_mask)
-
             opt.zero_grad()
 
-            value_loss = F.mse_loss(values, flat_reward)
-            policy_loss = -1.0 * torch.mean((flat_reward - values.detach()) * logits)
-            #policy_loss = -1.0 * torch.mean(flat_reward * logits)
+            loss, loss_info = self.compute_loss(
+                model, flat_state, flat_mask, flat_action, flat_reward
+            )
+            reward_info = compute_reward_info(history)
+            info = TrainStepInfo(0, it, loss_info + reward_info)
 
-            loss = 0.5 * value_loss + policy_loss
             loss.backward()
-
-            if world_size > 1:
-                for param in model.parameters():
-                    dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
-                    param.grad.data /= world_size
+            self.sync_gradients(model, world_size)
 
             opt.step()
 
-            term_rewards = history.reward[history.done]
-            for r in term_rewards:
-                progress.append(r.item())
+            logger.log_info(info)
 
-            pl_hist.append(policy_loss.item())
-            vl_hist.append(value_loss.item())
-
-            print(
-                f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)} W: {np.sum(np.array(progress) == 1.0)/len(progress)}",
-                flush=True,
-            )
             if (it % self.eval_freq == 0) and (it > 0):
                 if rank == 0:
-                    self.eval_fn(model, it)
+                    out = self.eval_fn(model, it)
+                    logger.log_info(out)
                     logger.checkpoint(it, 0, model)
 
                 dist.barrier()
 
 
-def run(rank, world_size, config):
+def run(rank, world_size, config, log_path):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
+    os.environ["MASTER_PORT"] = "12356"
 
     # initialize the process group
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -145,17 +193,44 @@ def run(rank, world_size, config):
 
     opt = optim.Adam(
         [
-            {"params": model.policy.parameters(), "lr": 1e-4},
+            {"params": model.policy.parameters(), "lr": 1e-3},
             {"params": model.V.parameters(), "lr": 1e-3},
         ],
     )
 
     env = config["env"]()
     ctx = config["rl_context"]()
-    logger = LogWriter("/tmp/garbo")
+
+    log_proc = rank == 0
+    logger = LogWriter(log_path, log_proc=log_proc, display=RLDisplay)
+
     ctx(logger, model, opt, env, rank, world_size)
 
     dist.destroy_process_group()
+
+
+def compute_reward_info(history):
+
+    term_rewards = history.reward[history.done]
+
+    wins = 0.0
+    ties = 0.0
+    losses = 0.0
+    for r in term_rewards:
+
+        if r.item() == 0.0:
+            ties += 1.0
+        elif r.item() == 1.0:
+            wins += 1.0
+        elif r.item() == -1.0:
+            losses += 1.0
+
+    outcomes = [
+        LossInfo("wins", wins),
+        LossInfo("losses", losses),
+        LossInfo("ties", ties),
+    ]
+    return outcomes
 
 
 if __name__ == "__main__":
@@ -166,7 +241,7 @@ if __name__ == "__main__":
 
     config = parse_args_into_config(config, args)
 
-    logger = LogWriter(args.log_path)
+    logger = LogWriter(args.log_path, log_proc=False)
     config_data = config.to_json()
     config_data["type"] = "config"
     logger.log_str(str(config_data))
@@ -176,6 +251,8 @@ if __name__ == "__main__":
 
     world_size = args.np
     if world_size > 1:
-        mp.spawn(run, args=(world_size, config), nprocs=world_size, join=True)
+        mp.spawn(
+            run, args=(world_size, config, args.log_path), nprocs=world_size, join=True
+        )
     else:
-        run(0, 1, config)
+        run(0, 1, config, args.log_path)

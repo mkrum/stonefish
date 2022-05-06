@@ -12,7 +12,13 @@ from stonefish.rep import MoveToken, MoveRep, BoardRep
 from chessplotlib import plot_board, plot_move, mark_move
 from mllg import TestInfo, ValidationInfo
 
-from stonefish.env import CChessEnvTorch, TTTEnvTwoPlayer, CChessEnvTorchTwoPlayer
+from stonefish.env import (
+    CChessEnvTorch,
+    TTTEnvTwoPlayer,
+    CChessEnvTorchTwoPlayer,
+    Stockfish,
+)
+from stonefish.rep import CBoardRep
 from chessenv.rep import CMove
 
 
@@ -23,10 +29,18 @@ class EvalContext:
 
     def __call__(self, model, batch_idx):
         win_per = eval_against_random(model, self.eval_env, N=100)
-
-        print(f"Winning Percentage: {win_per}")
-
         return ValidationInfo(0, batch_idx, [TestInfo("WinPer", win_per)])
+
+
+@dataclass
+class TTTEvalContext(EvalContext):
+    # Should be Two player
+    eval_env: Any = TTTEnvTwoPlayer(1)
+
+    def __call__(self, model, batch_idx):
+        sample_games = ttt_walkthrough(model, self.eval_env, N=2)
+        win_info = eval_against_random(model, self.eval_env, N=100)
+        return ValidationInfo(0, batch_idx, [win_info, sample_games])
 
 
 @dataclass
@@ -34,15 +48,15 @@ class ChessEvalContext:
     eval_env: Any = CChessEnvTorchTwoPlayer(1)
 
     def __call__(self, model, batch_idx):
-        win_per = eval_against_random(model, self.eval_env, N=20)
 
-        pgns = pgns_against_random_chess(model, self.eval_env, N=10)
-        for p in pgns:
-            print(p)
+        pgns_against_random_chess(model, self.eval_env, N=10)
 
-        print(f"Winning Percentage: {win_per}")
+        print("Stockfish:")
+        pgns_against_stockfish_chess(model, self.eval_env, N=1)
 
-        return ValidationInfo(0, batch_idx, [TestInfo("WinPer", win_per)])
+        win_info = eval_against_random(model, self.eval_env, N=100)
+
+        return ValidationInfo(0, batch_idx, [win_info])
 
 
 def print_example(model, states, actions, infer):
@@ -132,7 +146,7 @@ def random_action(masks):
     return torch.LongTensor(actions)
 
 
-def eval_against_random(model, env, N=100):
+def eval_against_random(model, env, N=100, max_sel=True):
     wins = 0
     for _ in range(N):
 
@@ -146,7 +160,7 @@ def eval_against_random(model, env, N=100):
             player_id = (player_id + 1) % 2
 
             if player_id == 0:
-                action, _ = model.sample(state, legal_mask)
+                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
             elif player_id == 1:
                 action = random_action(legal_mask)
 
@@ -158,11 +172,10 @@ def eval_against_random(model, env, N=100):
         ):
             wins += 1.0
 
-    return wins / N
+    return TestInfo("Win Rate Against Random", wins / N)
 
 
-def pgns_against_random_chess(model, env, N=10):
-    pgns = []
+def pgns_against_random_chess(model, env, N=10, max_sel=True):
     for _ in range(N):
 
         board = chess.Board()
@@ -177,7 +190,7 @@ def pgns_against_random_chess(model, env, N=10):
             player_id = (player_id + 1) % 2
 
             if player_id == 0:
-                action, _ = model.sample(state, legal_mask)
+                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
             elif player_id == 1:
                 action = random_action(legal_mask)
 
@@ -186,5 +199,84 @@ def pgns_against_random_chess(model, env, N=10):
             state, legal_mask, reward, done = env.step(action)
 
         game = chess.pgn.Game.from_board(board)
-        pgns.append(str(game))
-    return pgns
+        print(str(game))
+
+
+def pgns_against_stockfish_chess(model, env, N=10, max_sel=True, level=1):
+
+    stockfish = Stockfish(level)
+
+    for _ in range(N):
+
+        board = chess.Board()
+
+        state, legal_mask = env.reset()
+
+        # Player 0 goes first, this will be immediately flipped in the loop
+        player_id = 1
+
+        done = [False]
+        while not done[0]:
+            player_id = (player_id + 1) % 2
+
+            if player_id == 0:
+                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
+            elif player_id == 1:
+                board_rep = CBoardRep.from_tensor(state[0]).to_board()
+                action = stockfish(board_rep)
+                action = np.array([CMove.from_str(str(action)).to_int()])
+                action = torch.LongTensor(action)
+
+            move = CMove.from_int(action[0].cpu().numpy()).to_move()
+            board.push(move)
+            state, legal_mask, reward, done = env.step(action)
+
+        game = chess.pgn.Game.from_board(board)
+        print(str(game))
+
+    del stockfish
+
+
+def ttt_walkthrough(model, env, N=10, max_sel=True):
+    sample_games = "\n"
+    for _ in range(N):
+        state, legal_mask = env.reset()
+
+        # Player 0 goes first, this will be immediately flipped in the loop
+        player_id = 1
+
+        done = [False]
+        while not done[0]:
+            player_id = (player_id + 1) % 2
+
+            if player_id == 0:
+                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
+            elif player_id == 1:
+                action = random_action(legal_mask)
+
+            state = state.cpu().numpy()
+            action = action.cpu().numpy()
+            state = state.reshape(3, 3, 3)
+
+            for i in range(3):
+                for j in range(3):
+                    if 3 * i + j == action[0]:
+                        sample_games += "_"
+                    elif state[0, i, j] == 1:
+                        sample_games += " "
+                    elif state[1, i, j] == 1:
+                        sample_games += "x"
+                    elif state[2, i, j] == 1:
+                        sample_games += "o"
+
+                    if j != 2:
+                        sample_games += " | "
+
+                sample_games += "\n"
+                if i != 2:
+                    sample_games += "-----------\n"
+
+            sample_games += "\n"
+            state, legal_mask, reward, done = env.step(action)
+
+        return TestInfo("Sample TTT Games", sample_games)

@@ -453,7 +453,7 @@ class TBased(nn.Module):
         ).to(self.device)
 
         self.policy.load_state_dict(
-           torch.load("/nfs/chess_seq/model_1.pth", map_location=self.device)
+            torch.load("/nfs/chess_seq/model_5.pth", map_location=self.device)
         )
         self.policy = self.policy.to(self.device)
 
@@ -466,6 +466,8 @@ class TBased(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 1),
         )
+
+        self.load_state_dict(torch.load("/nfs/chess_seq_rl_cont/model_5600.pth"))
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(
@@ -494,7 +496,7 @@ class TBased(nn.Module):
         return values
 
     @torch.no_grad()
-    def sample(self, state, logit_mask):
+    def sample(self, state, logit_mask, max_sel=False):
         logit_mask = logit_mask.to(self.device)
 
         saved_mask = torch.zeros(logit_mask.shape[0], 2, self.output_rep.width())
@@ -525,7 +527,10 @@ class TBased(nn.Module):
             logits = action_mask * logits + (1 - action_mask) * -1e8
             logits = F.log_softmax(logits, dim=1)
 
-            next_value = Categorical(logits=logits).sample().view(-1, 1)
+            if max_sel:
+                next_value = torch.argmax(logits, dim=-1).view(-1, 1)
+            else:
+                next_value = Categorical(logits=logits).sample().view(-1, 1)
 
             tokens = torch.cat((tokens, next_value), dim=1)
 
@@ -566,6 +571,8 @@ class ACBase(nn.Module):
 
         self.act = F.log_softmax
 
+        # self.load_state_dict(torch.load("/tmp/garbo/model_1600.pth"))
+
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).long()
         logits = self.act(
@@ -582,12 +589,16 @@ class ACBase(nn.Module):
         return values
 
     @torch.no_grad()
-    def sample(self, state, move_mask):
+    def sample(self, state, move_mask, max_sel=False):
         state = state.to(self.device).long()
         move_mask = move_mask.to(self.device)
         logits = self.policy(state, None)
         logits = self.act(logits * move_mask + (1 - move_mask) * -1e8, dim=-1)
-        return Categorical(logits=logits).sample(), move_mask
+        if max_sel:
+            actions = torch.argmax(logits, dim=1)
+        else:
+            actions = Categorical(logits=logits).sample()
+        return actions, move_mask
 
 
 class SimpleRL(nn.Module):
@@ -616,7 +627,9 @@ class SimpleRL(nn.Module):
 
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).float()
-        logits = self.act(self.policy(state) * logit_mask + (1 - logit_mask) * -1e8)
+        logits = self.act(
+            self.policy(state) * logit_mask + (1 - logit_mask) * -1e8, dim=-1
+        )
         values = self.V(state)
         logits = torch.gather(logits, 1, action)
         return logits, values
@@ -626,9 +639,15 @@ class SimpleRL(nn.Module):
         return self.V(state)
 
     @torch.no_grad()
-    def sample(self, state, move_mask):
+    def sample(self, state, move_mask, max_sel=False):
         state = state.to(self.device).float()
         move_mask = move_mask.to(self.device)
         logits = self.policy(state)
-        logits = self.act(logits * move_mask + (1 - move_mask) * -1e8)
-        return Categorical(logits=logits).sample(), move_mask
+        logits = self.act(logits * move_mask + (1 - move_mask) * -1e8, dim=-1)
+
+        if max_sel:
+            actions = torch.argmax(logits, dim=-1)
+        else:
+            actions = Categorical(logits=logits).sample()
+
+        return actions, move_mask

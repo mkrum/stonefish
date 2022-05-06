@@ -1,15 +1,10 @@
 
 rl_context: !RLContext()
-    steps: 3
-    eval_fn: !EvalContext()
-        eval_env: !TTTEnvTwoPlayer()
-            n: 1
+    steps: 64
+    eval_fn: !TTTEvalContext()
 
 env: !TTTEnv()
     n: 64
-
-input_rep: !BoardRep
-output_rep: !MoveRep
 
 model: !SimpleRL()
 
