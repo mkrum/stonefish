@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 
-from stonefish.rep import MoveToken, MoveRep, BoardRep
+from stonefish.rep import MoveToken, MoveRep, BoardRep, CBoardRep
 from chessplotlib import plot_board, plot_move, mark_move
 from mllg import TestInfo, ValidationInfo
 
@@ -18,7 +18,7 @@ from stonefish.env import (
     CChessEnvTorchTwoPlayer,
     Stockfish,
 )
-from stonefish.rep import CBoardRep
+from stonefish.utils import ttt_state_to_str
 from chessenv.rep import CMove
 
 
@@ -49,14 +49,13 @@ class ChessEvalContext:
 
     def __call__(self, model, batch_idx):
 
-        pgns_against_random_chess(model, self.eval_env, N=10)
+        random_pgn = pgns_against_random_chess(model, self.eval_env, N=10)
 
-        print("Stockfish:")
-        pgns_against_stockfish_chess(model, self.eval_env, N=1)
+        stock_pgn = pgns_against_stockfish_chess(model, self.eval_env, N=1)
 
         win_info = eval_against_random(model, self.eval_env, N=100)
 
-        return ValidationInfo(0, batch_idx, [win_info])
+        return ValidationInfo(0, batch_idx, [win_info, random_pgn, stock_pgn])
 
 
 def print_example(model, states, actions, infer):
@@ -176,6 +175,7 @@ def eval_against_random(model, env, N=100, max_sel=True):
 
 
 def pgns_against_random_chess(model, env, N=10, max_sel=True):
+    pgn_str = ""
     for _ in range(N):
 
         board = chess.Board()
@@ -199,12 +199,16 @@ def pgns_against_random_chess(model, env, N=10, max_sel=True):
             state, legal_mask, reward, done = env.step(action)
 
         game = chess.pgn.Game.from_board(board)
-        print(str(game))
+        pgn_str += str(game) + "\n"
+
+    return TestInfo("Game Against Random", pgn_str)
 
 
 def pgns_against_stockfish_chess(model, env, N=10, max_sel=True, level=1):
 
     stockfish = Stockfish(level)
+
+    pgn_str = ""
 
     for _ in range(N):
 
@@ -232,9 +236,11 @@ def pgns_against_stockfish_chess(model, env, N=10, max_sel=True, level=1):
             state, legal_mask, reward, done = env.step(action)
 
         game = chess.pgn.Game.from_board(board)
-        print(str(game))
+        pgn_str += str(game) + "\n"
 
     del stockfish
+
+    return TestInfo("Game Against Stockfish", pgn_str)
 
 
 def ttt_walkthrough(model, env, N=10, max_sel=True):
@@ -254,29 +260,9 @@ def ttt_walkthrough(model, env, N=10, max_sel=True):
             elif player_id == 1:
                 action = random_action(legal_mask)
 
-            state = state.cpu().numpy()
             action = action.cpu().numpy()
-            state = state.reshape(3, 3, 3)
+            sample_games += ttt_state_to_str(state, action)
 
-            for i in range(3):
-                for j in range(3):
-                    if 3 * i + j == action[0]:
-                        sample_games += "_"
-                    elif state[0, i, j] == 1:
-                        sample_games += " "
-                    elif state[1, i, j] == 1:
-                        sample_games += "x"
-                    elif state[2, i, j] == 1:
-                        sample_games += "o"
-
-                    if j != 2:
-                        sample_games += " | "
-
-                sample_games += "\n"
-                if i != 2:
-                    sample_games += "-----------\n"
-
-            sample_games += "\n"
             state, legal_mask, reward, done = env.step(action)
 
         return TestInfo("Sample TTT Games", sample_games)

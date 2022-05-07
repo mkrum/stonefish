@@ -571,7 +571,7 @@ class ACBase(nn.Module):
 
         self.act = F.log_softmax
 
-        # self.load_state_dict(torch.load("/tmp/garbo/model_1600.pth"))
+        self.load_state_dict(torch.load("/tmp/garbo/model_1600.pth"))
 
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).long()
@@ -613,12 +613,16 @@ class SimpleRL(nn.Module):
             nn.Tanh(),
             nn.Linear(128, 128),
             nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),
             nn.Linear(128, 9),
         )
         self.act = F.log_softmax
 
         self.V = nn.Sequential(
             nn.Linear(27, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
             nn.ReLU(),
             nn.Linear(128, 128),
             nn.ReLU(),
@@ -642,8 +646,10 @@ class SimpleRL(nn.Module):
     def sample(self, state, move_mask, max_sel=False):
         state = state.to(self.device).float()
         move_mask = move_mask.to(self.device)
-        logits = self.policy(state)
-        logits = self.act(logits * move_mask + (1 - move_mask) * -1e8, dim=-1)
+
+        prelogits = self.policy(state)
+
+        logits = self.act(prelogits * move_mask + (1 - move_mask) * -1e8, dim=-1)
 
         if max_sel:
             actions = torch.argmax(logits, dim=-1)

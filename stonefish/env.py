@@ -13,7 +13,7 @@ from open_spiel.python.rl_environment import Environment, StepType
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-from chessenv import CChessEnv, CMove, CMoves
+from chessenv import CChessEnv, SFCChessEnv, CMove, CMoves
 
 
 @dataclass
@@ -281,52 +281,6 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
         )
 
 
-class TTTEnvTwoPlayer:
-    def __init__(self, n):
-        self.n = n
-        self._envs = [Environment(pyspiel.load_game("tic_tac_toe")) for _ in range(n)]
-
-    def reset(self):
-        out = [e.reset() for e in self._envs]
-        states = [o.observations["info_state"][0] for o in out]
-
-        legal_mask = np.zeros((self.n, 9))
-        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
-            for a in la:
-                legal_mask[i, a] = 1.0
-
-        return torch.LongTensor(np.stack(states)), torch.FloatTensor(legal_mask)
-
-    def step(self, action):
-        states = []
-        legal_mask = np.zeros((self.n, 9))
-        rewards = np.zeros((self.n,))
-        dones = np.zeros((self.n,))
-
-        for (i, a) in enumerate(action):
-            a = np.array([a.item()])
-
-            current_player = self._envs[i].get_state.current_player()
-            out = self._envs[i].step(a)
-
-            if out.step_type == StepType.LAST:
-                dones[i] = 1.0
-                rewards[i] = out.rewards[current_player]
-                out = self._envs[i].reset()
-
-            states.append(out.observations["info_state"][0])
-
-            for a in out.observations["legal_actions"]:
-                legal_mask[i, a] = 1.0
-
-        return (
-            torch.LongTensor(np.stack(states)),
-            torch.FloatTensor(legal_mask),
-            torch.FloatTensor(rewards),
-            torch.BoolTensor(dones),
-        )
-
-
 class TTTEnv:
     def __init__(self, n):
         self.n = n
@@ -343,31 +297,96 @@ class TTTEnv:
 
         return torch.LongTensor(np.stack(states)), torch.FloatTensor(legal_mask)
 
+    def get_response(self, out, current_player):
+        response = random.sample(out.observations["legal_actions"][current_player], 1)
+        return np.array(response)
+
+    def reset_board(self, env):
+        out = env.reset()
+
+        if random.random() < 0.5:
+            new_player = env.get_state.current_player()
+            response = random.sample(out.observations["legal_actions"][new_player], 1)
+            out = env.step(np.array(response))
+        return out
+
     def step(self, action):
         states = []
         legal_mask = np.zeros((self.n, 9))
         rewards = np.zeros((self.n,))
         dones = np.zeros((self.n,))
+
         for (i, a) in enumerate(action):
             a = np.array([a.item()])
 
-            out = self._envs[i].step(a)
+            current_player = self._envs[i].get_state.current_player()
 
-            if out.step_type == StepType.LAST:
+            step_out = self._envs[i].step(a)
+
+            if step_out.step_type == StepType.LAST:
                 dones[i] = 1.0
-                rewards[i] = out.rewards[0]
-                out = self._envs[i].reset()
+                rewards[i] = step_out.rewards[current_player]
+
+                out = self.reset_board(self._envs[i])
+
             else:
-                response = random.sample(out.observations["legal_actions"][1], 1)
+
+                new_player = self._envs[i].get_state.current_player()
+                response = self.get_response(step_out, new_player)
 
                 out = self._envs[i].step(np.array(response))
 
                 if out.step_type == StepType.LAST:
                     dones[i] = 1.0
-                    rewards[i] = out.rewards[0]
-                    out = self._envs[i].reset()
+                    rewards[i] = out.rewards[current_player]
+                    out = self.reset_board(self._envs[i])
 
-            states.append(out.observations["info_state"][0])
+            current_player = self._envs[i].get_state.current_player()
+
+            state = out.observations["info_state"][current_player]
+
+            if current_player == 1:
+                state = state[0:9] + state[18:] + state[9:18]
+
+            states.append(state)
+
+            for a in out.observations["legal_actions"]:
+                legal_mask[i, a] = 1.0
+
+        return (
+            torch.LongTensor(np.stack(states)),
+            torch.FloatTensor(legal_mask),
+            torch.FloatTensor(rewards),
+            torch.BoolTensor(dones),
+        )
+
+
+class TTTEnvTwoPlayer(TTTEnv):
+    def step(self, action):
+        states = []
+        legal_mask = np.zeros((self.n, 9))
+        rewards = np.zeros((self.n,))
+        dones = np.zeros((self.n,))
+
+        for (i, a) in enumerate(action):
+            a = np.array([a.item()])
+
+            current_player = self._envs[i].get_state.current_player()
+            out = self._envs[i].step(a)
+
+            if out.step_type == StepType.LAST:
+                dones[i] = 1.0
+                rewards[i] = out.rewards[current_player]
+                out = self.reset_board(self._envs[i])
+
+            current_player = self._envs[i].get_state.current_player()
+
+            state = out.observations["info_state"][current_player]
+
+            if current_player == 1:
+                state = state[0:9] + state[18:] + state[9:18]
+
+            states.append(state)
 
             for a in out.observations["legal_actions"]:
                 legal_mask[i, a] = 1.0

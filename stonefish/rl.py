@@ -1,4 +1,6 @@
 import os
+import copy
+import random
 from typing import Any
 from dataclasses import dataclass
 from collections import deque
@@ -18,6 +20,16 @@ from stonefish.mask import MoveMask
 from stonefish.utils import RolloutTensor
 from stonefish.rep import MoveRep
 from stonefish.display import RLDisplay
+
+
+class RandomModel:
+    def sample(self, state, tmasks):
+        masks = tmasks.numpy()
+        probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
+        actions = np.zeros(len(masks))
+        for (i, p) in enumerate(probs):
+            actions[i] = np.random.choice(9, p=p)
+        return torch.LongTensor(actions).cuda(), tmasks.cuda()
 
 
 def generate_rollout(env, model, n_steps, initial_state, legal_mask):
@@ -47,13 +59,23 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
     return history, state, legal_mask
 
 
-def mulit_player_generate_rollout(env, model_map, n_steps, initial_state, legal_mask):
+def mulit_player_generate_rollout(
+    env, model_one, model_two, n_steps, initial_state, legal_mask, player_id
+):
 
     state = initial_state
 
     history = RolloutTensor.empty()
 
     for _ in range(n_steps):
+
+        player_id = (player_id + 1) % 2
+
+        if player_id == 0:
+            model = model_one
+        elif player_id == 1:
+            model = model_two
+
         with torch.no_grad():
             action, legal_mask = model.sample(state, legal_mask)
 
@@ -71,7 +93,44 @@ def mulit_player_generate_rollout(env, model_map, n_steps, initial_state, legal_
         state = next_state
         legal_mask = next_legal_mask
 
-    return history, state, legal_mask
+    return history, state, legal_mask, player_id
+
+
+def mulit_player_sample_generate_rollout(
+    env, model_one, models, n_steps, initial_state, legal_mask, player_id
+):
+
+    state = initial_state
+
+    history = RolloutTensor.empty()
+
+    for _ in range(n_steps):
+
+        player_id = (player_id + 1) % 2
+
+        if player_id == 0:
+            model = model_one
+        elif player_id == 1:
+            model = random.sample(models, 1)[0]
+
+        with torch.no_grad():
+            action, legal_mask = model.sample(state, legal_mask)
+
+        next_state, next_legal_mask, reward, done = env.step(action)
+
+        history = history.add(
+            state,
+            action,
+            next_state,
+            reward,
+            done,
+            legal_mask,
+        )
+
+        state = next_state
+        legal_mask = next_legal_mask
+
+    return history, state, legal_mask, player_id
 
 
 @dataclass
@@ -176,9 +235,96 @@ class RLContext:
                 dist.barrier()
 
 
+def polyak_update(polyak_factor, target_network, network):
+    for target_param, param in zip(target_network.parameters(), network.parameters()):
+        target_param.data.copy_(
+            polyak_factor * param.data + target_param.data * (1.0 - polyak_factor)
+        )
+
+
+@dataclass
+class TwoModelRLContext(RLContext):
+
+    steps: int
+    eval_fn: Any
+    iters: int = int(1e5)
+    eval_freq: int = 100
+    gamma: float = 0.99
+    value_weight: float = 0.5
+    entropy_weight: float = 0.01
+    polyak_factor: float = 0.001
+
+    def get_data(self, env, model, twin_model, state, legal_mask, player_id):
+        history, state, legal_mask, player_id = mulit_player_generate_rollout(
+            env, model, twin_model, self.steps, state, legal_mask, player_id
+        )
+
+        history = history.to(model.device)
+
+        decay_values = model.value(state)
+
+        history.selfplay_decay_(self.gamma, decay_values.flatten().detach())
+
+        return history, state, legal_mask, player_id
+
+    def __call__(self, logger, model, opt, env, rank, world_size):
+
+        twin_model = copy.deepcopy(model)
+
+        if rank == 0:
+            out = self.eval_fn(model, 0)
+            logger.log_info(out)
+
+        dist.barrier()
+
+        state, legal_mask = env.reset()
+
+        player_id = 1
+        for it in range(int(self.iters)):
+            history, state, legal_mask, player_id = self.get_data(
+                env, model, twin_model, state, legal_mask, player_id
+            )
+
+            history = history[:, ::2]
+
+            (
+                flat_state,
+                flat_next_state,
+                flat_action,
+                flat_reward,
+                flat_done,
+                flat_mask,
+            ) = history.get_data()
+
+            opt.zero_grad()
+
+            loss, loss_info = self.compute_loss(
+                model, flat_state, flat_mask, flat_action, flat_reward
+            )
+            reward_info = compute_reward_info(history)
+            info = TrainStepInfo(0, it, loss_info + reward_info)
+
+            loss.backward()
+            self.sync_gradients(model, world_size)
+
+            opt.step()
+
+            logger.log_info(info)
+
+            polyak_update(self.polyak_factor, model, twin_model)
+
+            if (it % self.eval_freq == 0) and (it > 0):
+                if rank == 0:
+                    out = self.eval_fn(model, it)
+                    logger.log_info(out)
+                    logger.checkpoint(it, 0, model)
+
+                dist.barrier()
+
+
 def run(rank, world_size, config, log_path):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12356"
+    os.environ["MASTER_PORT"] = "12360"
 
     # initialize the process group
     dist.init_process_group("gloo", rank=rank, world_size=world_size)

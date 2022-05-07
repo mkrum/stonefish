@@ -29,6 +29,16 @@ class RolloutTensor:
     done: torch.BoolTensor
     mask: torch.FloatTensor
 
+    def __getitem__(self, idx):
+        return RolloutTensor(
+            self.state[idx],
+            self.action[idx],
+            self.next_state[idx],
+            self.reward[idx],
+            self.done[idx],
+            self.mask[idx],
+        )
+
     @classmethod
     def empty(cls):
         return cls(None, None, None, None, None, None)
@@ -124,24 +134,60 @@ class RolloutTensor:
             self.reward[:, i] -= ~self.done[:, i] * (
                 self.done[:, i + 1] * self.reward[:, i + 1]
             )
+
         i = self.reward.shape[1] - 1
 
         self.reward[:, i] += ~self.done[:, i] * gamma * -1 * values
 
         i -= 2
         while i >= 0:
-            self.reward[:, i] = self.reward[:, i] + ~(
-                self.done[:, i] | self.done[:, i + 1]
-            ) * gamma * (self.reward[:, i + 2])
+
+            self.done[:, i] = self.done[:, i] | self.done[:, i + 1]
+            self.reward[:, i] = self.reward[:, i] + ~self.done[:, i] * gamma * (
+                self.reward[:, i + 2]
+            )
             i -= 2
 
         i = self.reward.shape[1] - 2
 
+        self.done[:, i] = self.done[:, i] | self.done[:, i + 1]
         self.reward[:, i] += ~self.done[:, i] * gamma * values
 
         i -= 2
         while i >= 0:
-            self.reward[:, i] = self.reward[:, i] + ~(
-                self.done[:, i] | self.done[:, i + 1]
-            ) * gamma * (self.reward[:, i + 2])
+            self.done[:, i] = self.done[:, i] | self.done[:, i + 1]
+            self.reward[:, i] = self.reward[:, i] + ~self.done[:, i] * gamma * (
+                self.reward[:, i + 2]
+            )
             i -= 2
+
+
+def ttt_state_to_str(state, action):
+    if isinstance(state, torch.Tensor):
+        state = state.cpu().numpy()
+
+    if isinstance(action, torch.Tensor):
+        action = action.cpu().numpy()
+
+    state = state.reshape(3, 3, 3)
+
+    ttt_str = ""
+    for i in range(3):
+        for j in range(3):
+            if 3 * i + j == action[0]:
+                ttt_str += "_"
+            elif state[0, i, j] == 1:
+                ttt_str += " "
+            elif state[1, i, j] == 1:
+                ttt_str += "x"
+            elif state[2, i, j] == 1:
+                ttt_str += "o"
+
+            if j != 2:
+                ttt_str += " | "
+        ttt_str += "\n"
+        if i != 2:
+            ttt_str += "-----------\n"
+
+    ttt_str += "\n"
+    return ttt_str
