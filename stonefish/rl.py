@@ -15,6 +15,7 @@ import numpy as np
 
 from mllg import LogWriter, LossInfo, TrainStepInfo
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
+from chessenv.sfa import SFArray
 
 from stonefish.mask import MoveMask
 from stonefish.utils import RolloutTensor
@@ -329,7 +330,7 @@ class TwoModelRLContext(RLContext):
 
 def run(rank, world_size, config, log_path):
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12360"
+    os.environ["MASTER_PORT"] = "12347"
 
     # initialize the process group
     dist.init_process_group("gloo", rank=rank, world_size=world_size)
@@ -358,6 +359,67 @@ def run(rank, world_size, config, log_path):
     ctx(logger, model, opt, env, rank, world_size)
 
     dist.destroy_process_group()
+
+@dataclass
+class SLRLContext(RLContext):
+
+    def __call__(self, logger, model, opt, env, rank, world_size):
+
+        sfa = SFArray(1)
+
+        if rank == 0:
+            out = self.eval_fn(model, 0)
+            logger.log_info(out)
+
+        dist.barrier()
+
+        state, legal_mask = env.reset()
+
+        for it in range(int(self.iters)):
+            history, state, legal_mask = self.get_data(env, model, state, legal_mask)
+
+            (
+                flat_state,
+                flat_next_state,
+                flat_action,
+                flat_reward,
+                flat_done,
+                flat_mask,
+            ) = history.get_data()
+
+            labels = sfa.get_moves(flat_state.cpu().numpy())
+            labels = torch.LongTensor(labels).cuda()
+
+            opt.zero_grad()
+            with torch.no_grad():
+                loss, loss_info = self.compute_loss(
+                    model, flat_state, flat_mask, flat_action, flat_reward
+                )
+
+            #loss.backward()
+
+            sl_logits = model.policy(flat_state, labels)
+            sl_logits = sl_logits.reshape(-1, 129)
+            labels = labels[:, 1:].reshape(-1, )
+            sl_loss = F.cross_entropy(sl_logits, labels)
+
+            sl_loss.backward()
+
+            self.sync_gradients(model, world_size)
+
+            opt.step()
+
+            reward_info = compute_reward_info(history)
+            info = TrainStepInfo(0, it, loss_info + reward_info + [LossInfo("sl", sl_loss.item())])
+            logger.log_info(info)
+
+            if (it % self.eval_freq == 0) and (it > 0):
+                if rank == 0:
+                    out = self.eval_fn(model, it)
+                    logger.log_info(out)
+                    logger.checkpoint(it, 0, model)
+
+                dist.barrier()
 
 
 def compute_reward_info(history):

@@ -1,0 +1,18 @@
+
+rl_context: !SLRLContext()
+    steps: 64
+    eval_fn: !ChessEvalContext()
+    eval_freq: 200
+    entropy_weight: 0.0
+    value_weight: 0.00
+
+env: !CChessEnvTorch()
+    n: 28
+    draw_reward: -1
+    max_random: 10
+
+model: !TBased()
+    input_rep: !CBoardRep
+    output_rep: !MoveRep
+
+opt: !Adam()

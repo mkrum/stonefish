@@ -467,7 +467,7 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        self.load_state_dict(torch.load("/nfs/chess_rl2/model_25000.pth"))
+        self.load_state_dict(torch.load("../model_25000.pth"))
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(
