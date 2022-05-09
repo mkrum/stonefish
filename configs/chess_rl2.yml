@@ -1,17 +1,17 @@
 
 rl_context: !RLContext()
-    steps: 128
+    steps: 64
     eval_fn: !ChessEvalContext()
     eval_freq: 500
-    entropy_weight: 0.001
+    entropy_weight: 0.0
 
 env: !CChessEnvTorch()
-    n: 128
+    n: 28
     draw_reward: -1
     max_random: 10
 
-model: !ACBase()
+model: !TBased()
     input_rep: !CBoardRep
-    output_rep: !MoveEnum
+    output_rep: !MoveRep
 
 opt: !Adam()

@@ -269,7 +269,7 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
 
         done = torch.BoolTensor(done) | torch.BoolTensor(self.t > self.max_step)
 
-        self.reset_boards(done.numpy())
+        self.reset_boards(np.int32(done.numpy()))
 
         states = self.get_state()
         mask = self.get_mask()

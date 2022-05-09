@@ -39,6 +39,7 @@ def generate_rollout(env, model, n_steps, initial_state, legal_mask):
     history = RolloutTensor.empty()
 
     for _ in range(n_steps):
+
         with torch.no_grad():
             action, legal_mask = model.sample(state, legal_mask)
 
@@ -70,6 +71,8 @@ def mulit_player_generate_rollout(
     for _ in range(n_steps):
 
         player_id = (player_id + 1) % 2
+
+        assert torch.sum(state[:, 64] == 14.0) == state.shape[0]
 
         if player_id == 0:
             model = model_one
@@ -296,6 +299,8 @@ class TwoModelRLContext(RLContext):
                 flat_mask,
             ) = history.get_data()
 
+            assert torch.sum(flat_state[:, 64] == 14.0) == flat_state.shape[0]
+
             opt.zero_grad()
 
             loss, loss_info = self.compute_loss(
@@ -339,7 +344,7 @@ def run(rank, world_size, config, log_path):
 
     opt = optim.Adam(
         [
-            {"params": model.policy.parameters(), "lr": 1e-3},
+            {"params": model.policy.parameters(), "lr": 1e-4},
             {"params": model.V.parameters(), "lr": 1e-3},
         ],
     )

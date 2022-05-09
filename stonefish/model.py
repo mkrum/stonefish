@@ -452,9 +452,9 @@ class TBased(nn.Module):
             num_encoder_layers=4,
         ).to(self.device)
 
-        self.policy.load_state_dict(
-            torch.load("/nfs/chess_seq/model_5.pth", map_location=self.device)
-        )
+        # self.policy.load_state_dict(
+        #    torch.load("/nfs/chess_seq/model_5.pth", map_location=self.device)
+        # )
         self.policy = self.policy.to(self.device)
 
         self.V = nn.Sequential(
@@ -467,7 +467,7 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        self.load_state_dict(torch.load("/nfs/chess_seq_rl_cont/model_5600.pth"))
+        self.load_state_dict(torch.load("/nfs/chess_rl2/model_25000.pth"))
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(
@@ -570,8 +570,7 @@ class ACBase(nn.Module):
         )
 
         self.act = F.log_softmax
-
-        self.load_state_dict(torch.load("/tmp/garbo/model_1600.pth"))
+        # self.load_state_dict(torch.load("/nfs/class_rl_invert/model_600.pth"))
 
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).long()
