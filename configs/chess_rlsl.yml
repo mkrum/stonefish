@@ -1,17 +1,17 @@
 
 rl_context: !SLRLContext()
-    steps: 64
+    steps: 2
     eval_fn: !ChessEvalContext()
-    eval_freq: 200
+    eval_freq: 500
     entropy_weight: 0.0
-    value_weight: 0.1
-    policy_weight: 1.0
-    sl_weight: 0.1
+    value_weight: 0.0
+    policy_weight: 0.0
+    sl_weight: 1.0
 
 env: !CChessEnvTorch()
-    n: 28
+    n: 512
     draw_reward: -1
-    max_random: 10
+    max_random: 0
 
 model: !TBased()
     input_rep: !CBoardRep

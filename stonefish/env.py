@@ -265,9 +265,9 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
         actions = np.int32(actions.cpu().numpy())
         done, rewards = self.push_moves(actions)
 
-        rewards[(self.t > self.max_step)] = 0
+        rewards[(self.t >= self.max_step)] = 0
 
-        done = torch.BoolTensor(done) | torch.BoolTensor(self.t > self.max_step)
+        done = torch.BoolTensor(done) | torch.BoolTensor(self.t >= self.max_step)
 
         self.reset_boards(np.int32(done.numpy()))
 
