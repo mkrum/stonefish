@@ -24,6 +24,7 @@ from stonefish.display import RLDisplay
 
 
 class RandomModel:
+
     def sample(self, state, tmasks):
         masks = tmasks.numpy()
         probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
@@ -31,6 +32,24 @@ class RandomModel:
         for (i, p) in enumerate(probs):
             actions[i] = np.random.choice(9, p=p)
         return torch.LongTensor(actions).cuda(), tmasks.cuda()
+
+class SFModel:
+
+    def __init__(self, sfa):
+        self.sfa = sfa
+
+    def sample(self, state, tmasks):
+        moves = self.sfa.get_move_ints(state)
+
+        import pdb; pdb.set_trace()
+
+        masks = tmasks.numpy()
+        probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
+        actions = np.zeros(len(masks))
+        for (i, p) in enumerate(probs):
+            actions[i] = np.random.choice(9, p=p)
+        return torch.LongTensor(actions).cuda(), tmasks.cuda()
+
 
 
 def generate_rollout(env, model, n_steps, initial_state, legal_mask):
@@ -272,6 +291,7 @@ class TwoModelRLContext(RLContext):
 
         history.selfplay_decay_(self.gamma, decay_values.flatten().detach())
 
+        history = history[:, ::2]
         return history, state, legal_mask, player_id
 
     def __call__(self, logger, model, opt, env, rank, world_size):
@@ -291,8 +311,6 @@ class TwoModelRLContext(RLContext):
             history, state, legal_mask, player_id = self.get_data(
                 env, model, twin_model, state, legal_mask, player_id
             )
-
-            history = history[:, ::2]
 
             (
                 flat_state,
@@ -419,6 +437,37 @@ class SLRLContext(RLContext):
         opt.step()
 
         return losses
+
+class SLRLAgainstSFContext(SLRLContext):
+
+    steps: int
+    eval_fn: Any
+    iters: int = int(1e5)
+    eval_freq: int = 100
+    gamma: float = 0.99
+    value_weight: float = 0.5
+    policy_weight: float = 1.0
+    sl_weight: float = 1.0
+    entropy_weight: float = 0.01
+    polyak_factor: float = 0.001
+
+    _sfa: Any = SFArray(1)
+
+    def get_data(self, env, model, twin_model, state, legal_mask, player_id):
+        sf_model = SFModel(self._sfa)
+
+        history, state, legal_mask, player_id = mulit_player_generate_rollout(
+            env, model, sf_model, self.steps, state, legal_mask, player_id
+        )
+
+        history = history.to(model.device)
+
+        decay_values = model.value(state)
+
+        history.selfplay_decay_(self.gamma, decay_values.flatten().detach())
+
+        history = history[:, ::2]
+        return history, state, legal_mask, player_id
 
 
 def compute_reward_info(history):

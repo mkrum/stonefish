@@ -443,17 +443,18 @@ class TBased(nn.Module):
         self.device = device
         self.input_rep = input_rep
         self.output_rep = output_rep
-        emb_dim = 64
+        emb_dim = 256
         self.policy = BaseModel(
             device,
             input_rep,
             output_rep,
             emb_dim=emb_dim,
-            num_decoder_layers=2,
-            num_encoder_layers=4,
+            num_decoder_layers=4,
+            num_encoder_layers=11,
         ).to(self.device)
 
         self.policy = self.policy.to(self.device)
+        self.policy.load_state_dict(torch.load("../model_0.pth"))
 
         self.V = nn.Sequential(
             nn.Linear(emb_dim, 128),
@@ -465,7 +466,6 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        self.load_state_dict(torch.load("../model_2000.pth"))
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(
