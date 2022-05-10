@@ -399,12 +399,11 @@ class SLRLContext(RLContext):
         )
         first_loss.backward()
 
+        labels = torch.clip(labels, 0, 128)
         full_logits = model.policy(state, labels)
 
         sl_logits = full_logits.reshape(-1, 129)
         labels = labels[:, 1:].flatten()
-
-        labels = torch.clip(labels, 0, 128)
 
         sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
         sl_loss.backward()
