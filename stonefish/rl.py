@@ -110,7 +110,7 @@ def mulit_player_generate_rollout(
                     reward[i] = 1.0
                 else:
                     reward[i] = -1.0
-            import pdb; pdb.set_trace()
+
             if done[i] and (reward[i] == 1) and player_id == 0:
                 print("an actual win")
 
@@ -414,8 +414,8 @@ class SLRLContext(RLContext):
 
         opt.zero_grad()
 
-        #labels = self._sfa.get_moves(state.cpu().numpy())
-        #labels = torch.LongTensor(labels).cuda()
+        labels = self._sfa.get_moves(state.cpu().numpy())
+        labels = torch.LongTensor(labels).cuda()
 
         logits, values = model(state, action, mask)
 
@@ -430,20 +430,20 @@ class SLRLContext(RLContext):
         )
         first_loss.backward()
 
-        #labels = torch.clip(labels, 0, 128)
-        #full_logits = model.policy(state, labels)
+        labels = torch.clip(labels, 0, 128)
+        full_logits = model.policy(state, labels)
 
-        #sl_logits = full_logits.reshape(-1, 129)
-        #labels = labels[:, 1:].flatten()
+        sl_logits = full_logits.reshape(-1, 129)
+        labels = labels[:, 1:].flatten()
 
-        #sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
-        #sl_loss.backward()
+        sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
+        sl_loss.backward()
 
         losses = [
             LossInfo("policy", self.policy_weight * policy_loss.item()),
             LossInfo("value", self.value_weight * value_loss.item()),
             LossInfo("entropy", self.entropy_weight * entropy_loss.item()),
-            #LossInfo("sl", sl_loss.item()),
+            LossInfo("sl", sl_loss.item()),
         ]
         
         self.sync_gradients(model, 1)
