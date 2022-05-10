@@ -436,6 +436,7 @@ class ClassModel(nn.Module):
 
 
 class TBased(nn.Module):
+
     def __init__(self, device, input_rep, output_rep):
         super().__init__()
 
@@ -452,9 +453,6 @@ class TBased(nn.Module):
             num_encoder_layers=4,
         ).to(self.device)
 
-        # self.policy.load_state_dict(
-        #    torch.load("/nfs/chess_seq/model_5.pth", map_location=self.device)
-        # )
         self.policy = self.policy.to(self.device)
 
         self.V = nn.Sequential(
@@ -467,7 +465,7 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        self.load_state_dict(torch.load("../model_25000.pth"))
+        self.load_state_dict(torch.load("../model_2000.pth"))
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(
@@ -478,6 +476,7 @@ class TBased(nn.Module):
         ).to(self.device)
 
         full_mask = logit_mask.to(self.device)
+
         out, prelogits = self.policy(state, action, return_hidden=True)
         masked_prelogits = prelogits * full_mask + (1 - full_mask) * -1e8
 
@@ -485,14 +484,14 @@ class TBased(nn.Module):
         sel_logits = batched_index_select(logits, 2, action[:, 1:].unsqueeze(-1))
         total_logits = torch.sum(sel_logits, dim=1)
 
-        values = self.V(out[:, 0])
+        values = self.V(out[:, 0].detach())
 
         return total_logits, values
 
     def value(self, state):
         action = torch.zeros((state.shape[0], 1)).long().to(self.device)
         out, _ = self.policy(state, action, return_hidden=True)
-        values = self.V(out[:, 0])
+        values = self.V(out[:, 0].detach())
         return values
 
     @torch.no_grad()
@@ -570,7 +569,7 @@ class ACBase(nn.Module):
         )
 
         self.act = F.log_softmax
-        # self.load_state_dict(torch.load("/nfs/class_rl_invert/model_600.pth"))
+        self.load_state_dict(torch.load("/nfs/class_rl_invert/model_600.pth"))
 
     def forward(self, state, action, logit_mask=None):
         state = state.to(self.device).long()

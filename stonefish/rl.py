@@ -148,6 +148,8 @@ class RLContext:
     gamma: float = 0.99
     value_weight: float = 0.5
     entropy_weight: float = 0.01
+    policy_weight: float = 0.01
+
 
     def get_data(self, env, model, state, legal_mask):
         history, state, legal_mask = generate_rollout(
@@ -165,7 +167,9 @@ class RLContext:
 
         return history, state, legal_mask
 
-    def compute_loss(self, model, state, mask, action, reward):
+    def compute_loss(self, opt,  model, state, mask, action, reward):
+        opt.zero_grad()
+
         logits, values = model(state, action, mask)
 
         value_loss = F.mse_loss(values, reward)
@@ -184,7 +188,11 @@ class RLContext:
             LossInfo("entropy", entropy_loss.item()),
         ]
 
-        return loss, losses
+        loss.backward()
+        self.sync_gradients(model, world_size)
+        opt.step()
+
+        return losses
 
     def sync_gradients(self, model, world_size):
 
@@ -195,9 +203,9 @@ class RLContext:
 
     def __call__(self, logger, model, opt, env, rank, world_size):
 
-        if rank == 0:
-            out = self.eval_fn(model, 0)
-            logger.log_info(out)
+        #if rank == 0:
+        #    out = self.eval_fn(model, 0)
+        #    logger.log_info(out)
 
         dist.barrier()
 
@@ -215,18 +223,13 @@ class RLContext:
                 flat_mask,
             ) = history.get_data()
 
-            opt.zero_grad()
 
-            loss, loss_info = self.compute_loss(
-                model, flat_state, flat_mask, flat_action, flat_reward
+            loss_info = self.compute_loss(
+                opt, model, flat_state, flat_mask, flat_action, flat_reward
             )
             reward_info = compute_reward_info(history)
             info = TrainStepInfo(0, it, loss_info + reward_info)
 
-            loss.backward()
-            self.sync_gradients(model, world_size)
-
-            opt.step()
 
             logger.log_info(info)
 
@@ -363,63 +366,60 @@ def run(rank, world_size, config, log_path):
 @dataclass
 class SLRLContext(RLContext):
 
-    def __call__(self, logger, model, opt, env, rank, world_size):
+    steps: int
+    eval_fn: Any
+    iters: int = int(1e5)
+    eval_freq: int = 100
+    gamma: float = 0.99
+    value_weight: float = 0.5
+    policy_weight: float = 1.0
+    sl_weight: float = 1.0
+    entropy_weight: float = 0.01
+    polyak_factor: float = 0.001
 
-        sfa = SFArray(1)
+    _sfa: Any = SFArray(1)
 
-        if rank == 0:
-            out = self.eval_fn(model, 0)
-            logger.log_info(out)
+    def compute_loss(self, opt, model, state, mask, action, reward):
 
-        dist.barrier()
+        opt.zero_grad()
 
-        state, legal_mask = env.reset()
+        labels = self._sfa.get_moves(state.cpu().numpy())
+        labels = torch.LongTensor(labels).cuda()
 
-        for it in range(int(self.iters)):
-            history, state, legal_mask = self.get_data(env, model, state, legal_mask)
+        logits, values = model(state, action, mask)
 
-            (
-                flat_state,
-                flat_next_state,
-                flat_action,
-                flat_reward,
-                flat_done,
-                flat_mask,
-            ) = history.get_data()
+        value_loss = F.mse_loss(values, reward)
+        policy_loss = -1.0 * torch.mean((reward - values.detach()) * logits)
+        entropy_loss = -torch.mean(torch.sum(logits * torch.exp(logits), dim=-1))
 
-            labels = sfa.get_moves(flat_state.cpu().numpy())
-            labels = torch.LongTensor(labels).cuda()
+        first_loss = (
+            self.policy_weight * policy_loss
+            + self.value_weight * value_loss
+            + self.entropy_weight * entropy_loss
+        )
+        first_loss.backward()
 
-            opt.zero_grad()
-            with torch.no_grad():
-                loss, loss_info = self.compute_loss(
-                    model, flat_state, flat_mask, flat_action, flat_reward
-                )
+        full_logits = model.policy(state, labels)
 
-            #loss.backward()
+        sl_logits = full_logits.reshape(-1, 129)
+        labels = labels[:, 1:].flatten()
 
-            sl_logits = model.policy(flat_state, labels)
-            sl_logits = sl_logits.reshape(-1, 129)
-            labels = labels[:, 1:].reshape(-1, )
-            sl_loss = F.cross_entropy(sl_logits, labels)
+        labels = torch.clip(labels, 0, 128)
 
-            sl_loss.backward()
+        sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
+        sl_loss.backward()
 
-            self.sync_gradients(model, world_size)
+        losses = [
+            LossInfo("policy", self.policy_weight * policy_loss.item()),
+            LossInfo("value", self.value_weight * value_loss.item()),
+            LossInfo("entropy", self.entropy_weight * entropy_loss.item()),
+            LossInfo("sl", sl_loss.item()),
+        ]
+        
+        self.sync_gradients(model, 1)
+        opt.step()
 
-            opt.step()
-
-            reward_info = compute_reward_info(history)
-            info = TrainStepInfo(0, it, loss_info + reward_info + [LossInfo("sl", sl_loss.item())])
-            logger.log_info(info)
-
-            if (it % self.eval_freq == 0) and (it > 0):
-                if rank == 0:
-                    out = self.eval_fn(model, it)
-                    logger.log_info(out)
-                    logger.checkpoint(it, 0, model)
-
-                dist.barrier()
+        return losses
 
 
 def compute_reward_info(history):
