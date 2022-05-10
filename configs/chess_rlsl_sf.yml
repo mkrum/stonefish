@@ -1,0 +1,21 @@
+
+rl_context: !SLRLAgainstSFContext()
+    steps: 64
+    eval_fn: !ChessEvalContext()
+    eval_freq: 200
+    entropy_weight: 0.0
+    value_weight: 0.1
+    policy_weight: 1.0
+    sl_weight: 0.1
+
+env: !CChessEnvTorchTwoPlayer()
+    n: 28
+    invert: true
+    draw_reward: 0
+    max_random: 0
+
+model: !TBased()
+    input_rep: !CBoardRep
+    output_rep: !MoveRep
+
+opt: !Adam()

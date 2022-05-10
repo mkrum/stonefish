@@ -40,16 +40,18 @@ class SFModel:
 
     def sample(self, state, tmasks):
         moves = self.sfa.get_move_ints(state)
+        
+        for i in range(moves.shape[0]):
+            m = moves[i]
+            t = tmasks[i]
 
-        import pdb; pdb.set_trace()
-
-        masks = tmasks.numpy()
-        probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
-        actions = np.zeros(len(masks))
-        for (i, p) in enumerate(probs):
-            actions[i] = np.random.choice(9, p=p)
-        return torch.LongTensor(actions).cuda(), tmasks.cuda()
-
+            if t[m] != 1:
+                probs = t / np.sum(t)
+                moves[i] = np.random.choice(len(probs), p=probs)
+        
+        # fake transformer mask
+        tmasks = torch.zeros((tmasks.shape[0], 2, 129))
+        return torch.LongTensor(moves).cpu(), tmasks.cpu()
 
 
 def generate_rollout(env, model, n_steps, initial_state, legal_mask):
@@ -101,7 +103,7 @@ def mulit_player_generate_rollout(
 
         with torch.no_grad():
             action, legal_mask = model.sample(state, legal_mask)
-
+        
         next_state, next_legal_mask, reward, done = env.step(action)
 
         history = history.add(
@@ -453,7 +455,8 @@ class SLRLAgainstSFContext(SLRLContext):
 
     _sfa: Any = SFArray(1)
 
-    def get_data(self, env, model, twin_model, state, legal_mask, player_id):
+    def get_data(self, env, model, state, legal_mask):
+        player_id = 1
         sf_model = SFModel(self._sfa)
 
         history, state, legal_mask, player_id = mulit_player_generate_rollout(
@@ -467,7 +470,7 @@ class SLRLAgainstSFContext(SLRLContext):
         history.selfplay_decay_(self.gamma, decay_values.flatten().detach())
 
         history = history[:, ::2]
-        return history, state, legal_mask, player_id
+        return history, state, legal_mask
 
 
 def compute_reward_info(history):
