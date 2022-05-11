@@ -45,7 +45,10 @@ class SFModel:
             m = moves[i]
             t = tmasks[i]
 
-            if t[m] != 1:
+            m = np.clip(m, 0, len(t))
+
+            if t[m] != 1 or random.random() < 1.0:
+                t = t.cpu().numpy()
                 probs = t / np.sum(t)
                 moves[i] = np.random.choice(len(probs), p=probs)
         
@@ -111,11 +114,11 @@ def mulit_player_generate_rollout(
                 else:
                     reward[i] = -1.0
 
-            if done[i] and (reward[i] == 1) and player_id == 0:
-                print("an actual win")
+            #Kkjif done[i] and (reward[i] == 1) and player_id == 0:
+            #Kkj    print("an actual win")
 
-            if done[i] and (reward[i] == -1) and player_id == 1:
-                print("..what?")
+            #Kkjif done[i] and (reward[i] == -1) and player_id == 1:
+            #Kkj    print("..what?")
 
         history = history.add(
             state,
@@ -221,7 +224,7 @@ class RLContext:
         ]
 
         loss.backward()
-        self.sync_gradients(model, world_size)
+        self.sync_gradients(model, 1)
         opt.step()
 
         return losses
@@ -414,8 +417,8 @@ class SLRLContext(RLContext):
 
         opt.zero_grad()
 
-        labels = self._sfa.get_moves(state.cpu().numpy())
-        labels = torch.LongTensor(labels).cuda()
+        #labels = self._sfa.get_moves(state.cpu().numpy())
+        #labels = torch.LongTensor(labels).cuda()
 
         logits, values = model(state, action, mask)
 
@@ -430,20 +433,20 @@ class SLRLContext(RLContext):
         )
         first_loss.backward()
 
-        labels = torch.clip(labels, 0, 128)
-        full_logits = model.policy(state, labels)
+        #labels = torch.clip(labels, 0, 128)
+        #full_logits = model.policy(state, labels)
 
-        sl_logits = full_logits.reshape(-1, 129)
-        labels = labels[:, 1:].flatten()
+        #sl_logits = full_logits.reshape(-1, 129)
+        #labels = labels[:, 1:].flatten()
 
-        sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
-        sl_loss.backward()
+        #sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
+        #sl_loss.backward()
 
         losses = [
             LossInfo("policy", self.policy_weight * policy_loss.item()),
             LossInfo("value", self.value_weight * value_loss.item()),
             LossInfo("entropy", self.entropy_weight * entropy_loss.item()),
-            LossInfo("sl", sl_loss.item()),
+            #LossInfo("sl", sl_loss.item()),
         ]
         
         self.sync_gradients(model, 1)
