@@ -4,6 +4,8 @@ rl_context: !RLContext()
     eval_fn: !ChessEvalContext()
     eval_freq: 500
     entropy_weight: 0.0
+    value_weight: 0.5
+    policy_weight: 1.0
 
 env: !CChessEnvTorch()
     n: 28

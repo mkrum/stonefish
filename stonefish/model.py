@@ -443,18 +443,17 @@ class TBased(nn.Module):
         self.device = device
         self.input_rep = input_rep
         self.output_rep = output_rep
-        emb_dim = 256
+        emb_dim = 64
         self.policy = BaseModel(
             device,
             input_rep,
             output_rep,
             emb_dim=emb_dim,
-            num_decoder_layers=4,
-            num_encoder_layers=11,
+            num_decoder_layers=2,
+            num_encoder_layers=4,
         ).to(self.device)
 
         self.policy = self.policy.to(self.device)
-
 
         self.V = nn.Sequential(
             nn.Linear(emb_dim, 128),
@@ -466,7 +465,8 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        self.load_state_dict(torch.load("../justmatch/model_5000.pth"))
+        #self.policy.load_state_dict(torch.load("../chess_seq_final/model_2.pth"))
+        self.load_state_dict(torch.load("../chess_rl2_pretrain/model_3000.pth"))
 
 
     def forward(self, state, action, logit_mask):

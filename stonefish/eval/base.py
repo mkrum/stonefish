@@ -51,9 +51,10 @@ class ChessEvalContext:
 
         random_pgn = pgns_against_random_chess(model, self.eval_env, N=10)
 
+        stock_pgn = pgns_against_stockfish_chess(model, self.eval_env, max_sel=True, N=1)
         stock_pgn = pgns_against_stockfish_chess(model, self.eval_env, max_sel=False, N=10)
 
-        win_info = eval_against_random(model, self.eval_env, N=10)
+        win_info = eval_against_random(model, self.eval_env, N=100)
 
         return ValidationInfo(0, batch_idx, [win_info, random_pgn, stock_pgn])
 

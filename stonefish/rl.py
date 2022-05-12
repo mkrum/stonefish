@@ -107,12 +107,12 @@ def mulit_player_generate_rollout(
         
         next_state, next_legal_mask, reward, done = env.step(action)
 
-        for i in range(done.shape[0]):
-            if done[i] and (reward[i] == 0):
-                if player_id == 1:
-                    reward[i] = 1.0
-                else:
-                    reward[i] = -1.0
+        #for i in range(done.shape[0]):
+        #    if done[i] and (reward[i] == 0):
+        #        if player_id == 1:
+        #            reward[i] = 1.0
+        #        else:
+        #            reward[i] = -1.0
 
             #Kkjif done[i] and (reward[i] == 1) and player_id == 0:
             #Kkj    print("an actual win")
@@ -238,9 +238,9 @@ class RLContext:
 
     def __call__(self, logger, model, opt, env, rank, world_size):
 
-        #if rank == 0:
-        #    out = self.eval_fn(model, 0)
-        #    logger.log_info(out)
+        if rank == 0:
+            out = self.eval_fn(model, 0)
+            logger.log_info(out)
 
         dist.barrier()
 

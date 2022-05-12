@@ -1,6 +1,6 @@
 
 rl_context: !SLRLAgainstSFContext()
-    steps: 64
+    steps: 128
     eval_fn: !ChessEvalContext()
     eval_freq: 100
     entropy_weight: 0.0
@@ -12,7 +12,7 @@ env: !CChessEnvTorchTwoPlayer()
     n: 28
     invert: true
     draw_reward: 0
-    max_random: 30
+    max_random: 10
 
 model: !TBased()
     input_rep: !CBoardRep

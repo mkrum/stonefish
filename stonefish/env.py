@@ -14,6 +14,7 @@ from open_spiel.python.rl_environment import Environment, StepType
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
 from chessenv import CChessEnv, SFCChessEnv, CMove, CMoves
+from chessenv.sfa import SFArray
 
 
 @dataclass
@@ -255,6 +256,25 @@ class CChessEnvTorch(CChessEnv):
             torch.FloatTensor(done),
         )
 
+class CChessEnvTorchAgainstSF(CChessEnvTorch):
+
+    sfa = SFArray(1)
+
+    def sample_opponent(self):
+        state = self.get_state()
+        tmasks = self.get_mask()
+        moves = self.sfa.get_move_ints(state)
+        
+        for i in range(moves.shape[0]):
+            m = moves[i]
+            t = tmasks[i]
+
+            m = np.clip(m, 0, len(t))
+
+            if t[m] != 1 or random.random() < 0.5:
+                probs = t / np.sum(t)
+                moves[i] = np.random.choice(len(probs), p=probs)
+        return moves 
 
 class CChessEnvTorchTwoPlayer(CChessEnv):
     def reset(self):
