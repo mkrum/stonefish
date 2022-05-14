@@ -271,9 +271,10 @@ class CChessEnvTorchAgainstSF(CChessEnvTorch):
 
             m = np.clip(m, 0, len(t))
 
-            if t[m] != 1 or random.random() < 0.5:
+            if t[m] != 1 or random.random() < 0.4:
                 probs = t / np.sum(t)
                 moves[i] = np.random.choice(len(probs), p=probs)
+
         return moves 
 
 class CChessEnvTorchTwoPlayer(CChessEnv):

@@ -225,6 +225,7 @@ class RLContext:
 
         loss.backward()
         self.sync_gradients(model, 1)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
         opt.step()
 
         return losses
