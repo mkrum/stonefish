@@ -1,8 +1,10 @@
 language: python
 python:
-        - "3.8"
+    - "3.8"
+services: 
+    - docker
 install:
-    - pip install -r requirements.txt
-    - pip install -e .
+    - docker pull mkrum/stonefish
+    - docker build . -t stonefish
 script:
-    - pytest -s
+    - docker run --rm pytest -s
