@@ -1,15 +1,15 @@
 
 rl_context: !SLRLAgainstSFContext()
-    steps: 128
+    steps: 80
     eval_fn: !ChessEvalContext()
-    eval_freq: 100
-    entropy_weight: 0.0
-    value_weight: 0.1
-    policy_weight: 1.0
-    sl_weight: 0.1
+    eval_freq: 500
+    entropy_weight: 0.0 
+    value_weight: 0.0
+    policy_weight: 0.0
+    sl_weight: 0.0
 
 env: !CChessEnvTorchTwoPlayer()
-    n: 28
+    n: 32
     invert: true
     draw_reward: 0
     max_random: 10

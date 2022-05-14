@@ -1,6 +1,6 @@
 
 rl_context: !RLContext()
-    steps: 64
+    steps: 32
     eval_fn: !ChessEvalContext()
     eval_freq: 500
     entropy_weight: 0.0
