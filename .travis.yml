@@ -5,6 +5,6 @@ services:
     - docker
 install:
     - docker pull mkrum/stonefish
-    - docker build . -t stonefish
+    - docker build --cache-from mkrum/stonefish . -t stonefish
 script:
     - docker run --rm pytest -s
