@@ -98,7 +98,7 @@ def test_chess_twoplayer():
 
     history = RolloutTensor.empty()
 
-    for _ in range(int(1e5)):
+    for _ in range(10):
         last_state = state
         action = random_action(legal_mask)
         last_action = action
@@ -121,23 +121,5 @@ def test_chess_twoplayer():
         inverted_state = torch.FloatTensor(env.get_state())
         env.invert_boards()
         test_state = torch.FloatTensor(env.get_state())
-
-        if not (state == test_state).all():
-            print(CBoardRep.from_tensor(last_state[0]).to_fen())
-            print(MoveEnum.from_tensor(last_action[0]).to_str())
-            for i in range(1):
-                print(CBoardRep.from_tensor(state[i]).to_fen())
-                print(CBoardRep.from_tensor(test_state[i]).to_fen())
-                print(CBoardRep.from_tensor(inverted_state[i]).to_fen())
-                print()
-            import pdb
-
-            pdb.set_trace()
-
         assert (state == test_state).all()
 
-    history.selfplay_decay_(0.99, 10 * torch.ones(2))
-
-
-if __name__ == "__main__":
-    test_chess_twoplayer()

@@ -1,10 +1,12 @@
 import torch
 from torch.utils.data import DataLoader
 from stonefish.dataset import ChessData, TTTData
+from stonefish.rep import BoardRep, MoveRep
+from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
 
 def test_dataset():
-    dataset = ChessData("test/sample.csv")
+    dataset = ChessData("test/sample.csv", BoardRep, MoveRep)
     board_tensor, move_tensor = dataset[0]
 
     # Check the type
@@ -17,7 +19,7 @@ def test_dataset():
 
 
 def test_in_dataloader():
-    dataset = ChessData("test/sample.csv")
+    dataset = ChessData("test/sample.csv", BoardRep, MoveRep)
     dataloader = DataLoader(dataset, batch_size=8)
     board_tensor, move_tensor = next(iter(dataloader))
 
@@ -31,7 +33,7 @@ def test_in_dataloader():
 
 
 def test_dataset():
-    dataset = TTTData("data/ttt_test.csv")
+    dataset = TTTData("data/ttt_test.csv", TTTBoardRep, TTTMoveRep)
     board_tensor, move_tensor = dataset[0]
 
     # Check the type
