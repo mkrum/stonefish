@@ -7,4 +7,4 @@ install:
     - docker pull mkrum/stonefish
     - docker build --cache-from mkrum/stonefish . -t stonefish
 script:
-    - docker run --rm pytest -s
+    - docker run --rm stonefish pytest -s
