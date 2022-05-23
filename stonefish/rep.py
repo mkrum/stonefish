@@ -275,7 +275,7 @@ class MoveToken(EnumRep):
     )
 
     # All of the possible tokens in the move space.
-    _tokens = ["<start>"] + _squares + _top_promotions + _bottom_promotions
+    _tokens = ["<start>", "<pad>"] + _squares + _top_promotions + _bottom_promotions
 
     _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_tokens)}
     _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_tokens)}

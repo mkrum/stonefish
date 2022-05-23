@@ -11,6 +11,14 @@ class BoardMoveSeq2SeqTokenizer(PreTrainedTokenizer):
         self._board_tokenizer = BoardTokenizer()
         self._move_tokenizer = MoveTokenizer()
         self.current_tokenizer = self._board_tokenizer
+    
+    def save_vocabulary(self, *args, **kwargs):
+        pass
+        return ()
+
+    def load_vocabulary(self, *args, **kwargs):
+        pass
+        return ()
 
     @contextmanager
     def as_target_tokenizer(self):
@@ -62,6 +70,7 @@ class BoardTokenizer(PreTrainedTokenizer):
         "!ck",
         "cq",
         "!cq",
+        "<pad>",
     ]
 
     def __init__(self, max_len=1024):
