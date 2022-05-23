@@ -9,7 +9,6 @@ import numpy as np
 
 from chessenv import CBoard, CMove
 
-
 class EnumRep:
     """
     Simple enumeration based representation.

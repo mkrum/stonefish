@@ -1,5 +1,6 @@
 from collections import deque
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 from typing import Any
 
 import chess
@@ -20,6 +21,22 @@ from stonefish.env import (
 )
 from stonefish.utils import ttt_state_to_str
 from chessenv.rep import CMove
+
+
+class EvalModel:
+
+    @abstractmethod
+    def prob(self, board, move) -> np.array:
+        """
+        Returns the probability of performing the move
+        """
+        ...
+
+    @abstractmethod
+    def act(self, board) -> move:
+        """
+        Returns the the 
+        """
 
 
 @dataclass

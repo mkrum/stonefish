@@ -192,8 +192,6 @@ format saved at `path` to use as a dataset.
 function to_dataset(path::String)
     conn = RedisConnection()
 
-    sf = runengine("stockfish")
-
     boards = collect(keys(conn, "*"))
 
     # remove our two job queues, just in case
