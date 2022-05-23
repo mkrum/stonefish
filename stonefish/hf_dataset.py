@@ -2,6 +2,7 @@
 from datasets import load_dataset
 from transformers import AutoTokenizer, DataCollatorForSeq2Seq
 from transformers import AutoModelForSeq2SeqLM, Seq2SeqTrainingArguments, Seq2SeqTrainer
+from transformers import T5Config, T5Model, T5ForConditionalGeneration
 
 from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqTokenizer
 
@@ -22,7 +23,11 @@ def preprocess_function(examples):
     model_inputs["labels"] = labels["input_ids"]
     return model_inputs
 
-model = AutoModelForSeq2SeqLM.from_pretrained("t5-small")
+model_config = T5Config(
+    vocab_size=130,
+    decoder_start_token_id=0,
+)
+model = T5ForConditionalGeneration(model_config)
 
 tokenized_data = {}
 tokenized_data['train'] = train_dataset.map(preprocess_function, batched=True)
@@ -34,8 +39,8 @@ training_args = Seq2SeqTrainingArguments(
     output_dir="./results",
     evaluation_strategy="epoch",
     learning_rate=2e-5,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=16,
+    per_device_train_batch_size=512,
+    per_device_eval_batch_size=512,
     weight_decay=0.01,
     save_total_limit=3,
     num_train_epochs=1,
