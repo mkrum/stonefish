@@ -101,7 +101,7 @@ class MoveTokenizer(PreTrainedTokenizer):
         super().__init__(max_len=max_len, pad_token="<pad>")
 
     def _tokenize(self, sequence):
-        return [sequence[:2], sequence[2:]]
+        return ["<start>", sequence[:2], sequence[2:]]
 
     def _convert_token_to_id(self, token):
         return self.rep.from_str(token).to_int()
