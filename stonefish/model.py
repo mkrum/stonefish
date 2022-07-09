@@ -436,7 +436,6 @@ class ClassModel(nn.Module):
 
 
 class TBased(nn.Module):
-
     def __init__(self, device, input_rep, output_rep):
         super().__init__()
 
@@ -465,9 +464,8 @@ class TBased(nn.Module):
             nn.Linear(128, 1),
         )
 
-        #self.policy.load_state_dict(torch.load("../chess_seq_final/model_2.pth"))
+        # self.policy.load_state_dict(torch.load("../chess_seq_final/model_2.pth"))
         self.load_state_dict(torch.load("../chess_rl_sf_5_cont/model_27500.pth"))
-
 
     def forward(self, state, action, logit_mask):
         action = torch.stack(

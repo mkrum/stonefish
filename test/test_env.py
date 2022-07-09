@@ -122,4 +122,3 @@ def test_chess_twoplayer():
         env.invert_boards()
         test_state = torch.FloatTensor(env.get_state())
         assert (state == test_state).all()
-

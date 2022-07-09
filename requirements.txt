@@ -1,5 +1,5 @@
 torch
-transformers
+transformers[flax]
 datasets
 python-chess
 pytest
@@ -12,3 +12,6 @@ open_spiel
 yamlargs
 mllg
 open_spiel
+datasets
+optax
+wandb
