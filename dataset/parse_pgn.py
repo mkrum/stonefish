@@ -15,6 +15,13 @@ def mirror_move(m):
 def parse_pgn(pgn, output_file):
     node = pgn.game()
 
+    if 'Classical' not in pgn.headers['Event']:
+        return
+
+    result = pgn.headers['Result']
+    if result not in ['0-1', '1-0']:
+        return
+
     boards = []
     moves = []
     while node: 
@@ -22,11 +29,16 @@ def parse_pgn(pgn, output_file):
         node = node.next()
         if node:
             moves.append(node.move)
-
+    
     boards = boards[:-1]
-    for (idx, (b, m)) in enumerate(zip(boards, moves)):
+    if result == '1-0':
+        boards = boards[0::2]
+    else:
+        boards = boards[1::2]
 
-        if (idx % 2) != 0:
+    for (b, m) in zip(boards, moves):
+
+        if b.turn == chess.BLACK:
             b = b.mirror()
             m = mirror_move(m)
         
