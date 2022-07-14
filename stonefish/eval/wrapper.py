@@ -5,7 +5,6 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from dataclasses import dataclass
-from main import NonsharedFlaxT5ForConditionalGenerationModule
 from torch.distributions.categorical import Categorical
 from stonefish.eval.base import ChessEvalContext
 import numpy as np
@@ -15,34 +14,42 @@ from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqToke
 from stonefish.env import RandomAgent, StockfishAgent
 from stonefish.mask import MoveMask
 from stonefish.rep import MoveRep, CBoard, MoveToken
+from chessenv import CMove
 
 
 @dataclass(frozen=True)
 class ModelEvalWrapper:
     model: Any
+    params: Any
     input_rep: Any = CBoard
     output_rep: Any = MoveRep
 
-    def sample(self, board: chess.Board, max_sel=True):
-
+    def __call__(self, board: chess.Board, max_sel=True):
         board_rep = CBoard.from_board(board)
 
-        state = board_rep.to_array()
-        legal_mask = board_rep.get_mask()
-        move_mask = MoveMask.from_mask(legal_mask)
+        state = jnp.array(board_rep.to_array())
+        state = jnp.expand_dims(state, 0)
 
-        encoder_outputs = self.model.encode(input_ids=state)
+        legal_mask = torch.zeros(1, 64 * 88)
+
+        legal_moves = list(board.legal_moves)
+        for m in legal_moves:
+            mint = CMove.from_move(m).to_int()
+            legal_mask[0, mint] = 1.0
+
+        move_mask = MoveMask.from_mask(legal_mask)
+        
+        encoder_outputs = self.model.encode(input_ids=state, params=self.params)
 
         decoder_input_ids = jnp.zeros((state.shape[0], 1), dtype="i4")
 
         for _ in range(2):
-            outputs = self.model.decode(decoder_input_ids, encoder_outputs)
+            outputs = self.model.decode(decoder_input_ids, encoder_outputs, params=self.params)
             logits = outputs.logits
 
             mm = move_mask.get_mask(
                 torch.LongTensor(np.array(decoder_input_ids, dtype=np.int32))
             ).numpy()
-            mm = jnp.concatenate([mm, jnp.zeros((1, 31998))], axis=-1)
 
             sel_logits = logits[:, -1, :] * mm + (1 - mm) * -1e8
 
@@ -58,19 +65,6 @@ class ModelEvalWrapper:
 
         return self.output_rep.from_numpy(np.array(decoder_input_ids[0])).to_uci()
 
-
-# board_tokenizer = BoardTokenizer()
-# move_tokenizer = MoveTokenizer()
-
-# model = NonsharedFlaxT5ForConditionalGenerationModule.from_pretrained("t5chess")
-# model = ModelEvalWrapper(model)
-
-wandb.init()
-
-ctx = ChessEvalContext()
-
-ctx(StockfishAgent(1), 0)
-time.sleep(60)
-ctx(StockfishAgent(2), 1)
-time.sleep(60)
-ctx(StockfishAgent(3), 2)
+    @property
+    def name(self):
+        return 'ModelWrapper'

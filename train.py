@@ -1,7 +1,10 @@
 import optax
+import copy
+import os
 import jax
 from collections import deque
 from datasets import load_dataset
+from transformers.models.t5.modeling_flax_t5 import FlaxT5ForConditionalGenerationModule, FlaxT5Stack
 from transformers import (
     FlaxT5ForConditionalGeneration,
     T5Config,
@@ -17,26 +20,29 @@ from typing import Any
 import jax.numpy as jnp
 
 import numpy as np
+import flax.linen as nn
 
 from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqTokenizer
+from stonefish.eval.base import ChessEvalContext
+from stonefish.eval.wrapper import ModelEvalWrapper
 import wandb
 
 board_tokenizer = BoardTokenizer()
 move_tokenizer = MoveTokenizer()
 
+class NonsharedFlaxT5ForConditionalGenerationModule(FlaxT5ForConditionalGenerationModule):
 
-class NonsharedFlaxT5ForConditionalGenerationModule(FlaxT5ForConditionalGeneration):
     def setup(self):
         self.model_dim = self.config.d_model
 
         self.in_embed = nn.Embed(
-            board_tokenizer.size(),
+            board_tokenizer.vocab_size,
             self.config.d_model,
             embedding_init=jax.nn.initializers.normal(self.config.initializer_factor),
         )
 
         self.out_embed = nn.Embed(
-            move_tokenizer.size(),
+            move_tokenizer.vocab_size,
             self.config.d_model,
             embedding_init=jax.nn.initializers.normal(self.config.initializer_factor),
         )
@@ -54,12 +60,14 @@ class NonsharedFlaxT5ForConditionalGenerationModule(FlaxT5ForConditionalGenerati
         self.decoder = FlaxT5Stack(decoder_config, self.out_embed, dtype=self.dtype)
 
         self.lm_head = nn.Dense(
-            move_tokenizer.size(),
+            move_tokenizer.vocab_size,
             use_bias=False,
             kernel_init=jax.nn.initializers.normal(self.config.initializer_factor),
             dtype=self.dtype,
         )
 
+class NonsharedFlaxT5ForConditionalGeneration(FlaxT5ForConditionalGeneration):
+     module_class = NonsharedFlaxT5ForConditionalGenerationModule
 
 def prepare_data(example):
     board = example["board"]
@@ -96,14 +104,14 @@ def train_step(state, batch, rng):
     new_state = state.apply_gradients(grads=grad)
 
     metrics = jax.lax.pmean(
-        {"loss": out[0], "accuracy": out[1][0], "full accuracy": out[1][1]},
+            {"train/loss": out[0], "train/accuracy": out[1][0], "train/FullAccuracy": out[1][1], "train/learning_rate": linear_decay_lr_schedule_fn(state.step)},
         axis_name="batch",
     )
     return new_state, metrics, new_rng
 
 
 def make_print():
-    keys = ["loss", "accuracy", "full accuracy"]
+    keys = ["train/loss", "train/accuracy", "train/FullAccuracy"]
     hist = {k: deque(maxlen=100) for k in keys}
 
     def print_metrics(metrics):
@@ -118,11 +126,13 @@ def make_print():
 
 
 if __name__ == "__main__":
-    config = T5Config()
+    config = T5Config(tie_word_embeddings=False)
 
     tokenizer = BoardMoveSeq2SeqTokenizer()
 
-    model = NonsharedFlaxT5ForConditionalGenerationModule(config)
+    model = NonsharedFlaxT5ForConditionalGeneration(config)
+
+    ctx = ChessEvalContext()
 
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer, model=model, return_tensors="np"
@@ -132,21 +142,37 @@ if __name__ == "__main__":
 
     dataset = load_dataset(
         "csv",
-        data_files={"train": "../data/data.csv"},
+        data_files={"train": [f'../data/{f}' for f in os.listdir("../data/")][:3]},
         column_names=["board", "move"],
     )
 
     dataset = dataset.map(
         prepare_data,
         batched=False,
-        num_proc=30,
+        num_proc=80,
         keep_in_memory=True,
         load_from_cache_file=False,
     )
-    print("DONE")
+
+    num_train_steps = 500_000
+    warmup_steps = 10_000
+
+    warmup_fn = optax.linear_schedule(
+        init_value=0.0, end_value=1e-4, transition_steps=warmup_steps
+    )
+
+    decay_fn = optax.linear_schedule(
+        init_value=1e-4,
+        end_value=0,
+        transition_steps=num_train_steps - warmup_steps,
+    )
+
+    linear_decay_lr_schedule_fn = optax.join_schedules(
+        schedules=[warmup_fn, decay_fn], boundaries=[warmup_steps]
+    )
 
     optimizer = optax.adamw(
-        learning_rate=1e-5,
+        learning_rate=linear_decay_lr_schedule_fn,
     )
 
     wandb.init(project="stonefish")
@@ -177,9 +203,11 @@ if __name__ == "__main__":
     current_host_idx = jax.process_index()
 
     pm = make_print()
-
+        
+    step = 0
     for epoch in range(10):
         for (idx, batch) in enumerate(train_dl):
+            step += 1
             del batch["board"]
             del batch["move"]
             del batch["token_type_ids"]
@@ -195,15 +223,16 @@ if __name__ == "__main__":
             metrics = jax_utils.unreplicate(metrics)
 
             if idx % 25 == 0:
-                metrics["train/step"] = idx
+                metrics["train/step"] = step
                 metrics["train/epoch"] = epoch
                 wandb.log(metrics)
 
             pm(metrics)
 
-            if idx % 1000 == 0:
+            if idx % 10000 == 0:
                 if jax.process_index() == 0:
                     params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
+                    ctx(ModelEvalWrapper(model, params), step)
                     model.save_pretrained(OUTPUT_DIR, params=params)
                     tokenizer.save_pretrained(OUTPUT_DIR)
 

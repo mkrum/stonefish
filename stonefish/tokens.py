@@ -113,8 +113,8 @@ class MoveTokenizer(PreTrainedTokenizer):
         return self.rep.from_int(idx).to_str()
 
     def get_vocab(self):
-        return self.rep.SYMBOLS
+        return self.rep._tokens
 
     @property
     def vocab_size(self):
-        return len(self.rep.SYMBOLS)
+        return len(self.rep._tokens)

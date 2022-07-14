@@ -54,7 +54,7 @@ class StockfishAgent(ChessAgent):
         return f"{self.__class__.__name__}({self.depth})"
 
 
-@dataclass(frozen=True)
+@dataclass
 class RandomAgent(ChessAgent):
     def __call__(self, board: chess.Board, max_sel: bool = False) -> chess.Move:
         random_moves = list(board.legal_moves)
@@ -67,9 +67,9 @@ def chess_rollout(white_engine, black_engine):
     while not board.is_game_over():
         if board.turn == chess.WHITE:
             move = white_engine(board)
-        else:
+        elif board.turn == chess.BLACK:
             move = black_engine(board)
-
+        
         board.push(move)
 
     game = chess.pgn.Game().from_board(board)

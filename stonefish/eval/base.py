@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import chess
+import tqdm
 import wandb
 import numpy as np
 import torch
@@ -49,15 +50,16 @@ class TTTEvalContext(EvalContext):
 
 @dataclass
 class ChessEvalContext:
+    sf_agent = StockfishAgent(2)
     def __call__(self, model, step):
 
-        random_pgn = get_pgns(model, RandomAgent(), N=10)
-        stock_pgn = get_pgns(model, StockfishAgent(1), N=1)
+        stock_pgn = get_pgns(model, self.sf_agent, N=1)
+        random_pgn = get_pgns(model, RandomAgent(), N=1)
 
         game_log = create_game_log_for_wandb(stock_pgn + random_pgn)
 
-        win_info = eval_against_random(model, N=100)
-        game_log["eval/RandomWinPercentage"] = win_info
+        #win_info = eval_against_random(model, N=100)
+        #game_log["eval/RandomWinPercentage"] = win_info
         game_log["eval/step"] = step
 
         wandb.log(game_log)
@@ -153,7 +155,7 @@ def random_action(masks):
 def eval_against_random(model, N=100, max_sel=True):
     wins = 0
     opponent = RandomAgent()
-    for _ in range(N):
+    for _ in tqdm.tqdm(range(N)):
         game = chess_rollout(model, opponent)
         outcome = game.headers["Result"]
         if outcome == "1-0":
@@ -163,7 +165,7 @@ def eval_against_random(model, N=100, max_sel=True):
 
 def get_pgns(model, opponent, N=10):
     pgns = []
-    for _ in range(N):
+    for _ in tqdm.tqdm(range(N)):
         game = chess_rollout(model, opponent)
         pgns.append(game)
 
