@@ -1,4 +1,5 @@
 import optax
+import shutil
 import copy
 import os
 import jax
@@ -25,6 +26,7 @@ import flax.linen as nn
 from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqTokenizer
 from stonefish.eval.base import ChessEvalContext
 from stonefish.eval.wrapper import ModelEvalWrapper
+from transformers import AutoConfig
 import wandb
 
 board_tokenizer = BoardTokenizer()
@@ -126,7 +128,8 @@ def make_print():
 
 
 if __name__ == "__main__":
-    config = T5Config(tie_word_embeddings=False)
+    config = T5Config() #AutoConfig.from_pretrained("t5-base")
+    config.tie_word_embeddings = False
 
     tokenizer = BoardMoveSeq2SeqTokenizer()
 
@@ -140,19 +143,6 @@ if __name__ == "__main__":
 
     OUTPUT_DIR = "./t5chess"
 
-    dataset = load_dataset(
-        "csv",
-        data_files={"train": [f'../data/{f}' for f in os.listdir("../data/")][:3]},
-        column_names=["board", "move"],
-    )
-
-    dataset = dataset.map(
-        prepare_data,
-        batched=False,
-        num_proc=80,
-        keep_in_memory=True,
-        load_from_cache_file=False,
-    )
 
     num_train_steps = 500_000
     warmup_steps = 10_000
@@ -181,14 +171,6 @@ if __name__ == "__main__":
 
     batch_size = 256 * jax.device_count()
 
-    train_dl = DataLoader(
-        dataset["train"],
-        batch_size=batch_size,
-        collate_fn=data_collator,
-        drop_last=True,
-        shuffle=True,
-    )
-
     state = train_state.TrainState.create(
         apply_fn=model.__call__, params=model.params, tx=optimizer
     )
@@ -203,40 +185,72 @@ if __name__ == "__main__":
     current_host_idx = jax.process_index()
 
     pm = make_print()
+
+
+    data_files = os.listdir("../data")
         
     step = 0
     for epoch in range(10):
-        for (idx, batch) in enumerate(train_dl):
-            step += 1
-            del batch["board"]
-            del batch["move"]
-            del batch["token_type_ids"]
+        
+        for data_file in data_files:
 
-            local_host_model_inputs = {
-                key: np.split(batch.data[key], num_of_hosts, axis=0)[current_host_idx]
-                for key, value in batch.data.items()
-            }
+            dataset = load_dataset(
+                "csv",
+                data_files={"train": f'../data/{data_file}'},
+                column_names=["board", "move"],
+            )
 
-            model_inputs = shard(local_host_model_inputs)
-            state, metrics, rng = p_train_step(state, model_inputs, rng)
+            dataset = dataset.map(
+                prepare_data,
+                batched=False,
+                num_proc=80,
+                keep_in_memory=True,
+                load_from_cache_file=False,
+            )
 
-            metrics = jax_utils.unreplicate(metrics)
+            train_dl = DataLoader(
+                dataset["train"],
+                batch_size=batch_size,
+                collate_fn=data_collator,
+                drop_last=True,
+                shuffle=True,
+            )
 
-            if idx % 25 == 0:
-                metrics["train/step"] = step
-                metrics["train/epoch"] = epoch
-                wandb.log(metrics)
+            for (idx, batch) in enumerate(train_dl):
+                step += 1
+                del batch["board"]
+                del batch["move"]
+                del batch["token_type_ids"]
 
-            pm(metrics)
+                local_host_model_inputs = {
+                    key: np.split(batch.data[key], num_of_hosts, axis=0)[current_host_idx]
+                    for key, value in batch.data.items()
+                }
 
-            if idx % 10000 == 0:
-                if jax.process_index() == 0:
-                    params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
-                    ctx(ModelEvalWrapper(model, params), step)
-                    model.save_pretrained(OUTPUT_DIR, params=params)
-                    tokenizer.save_pretrained(OUTPUT_DIR)
+                model_inputs = shard(local_host_model_inputs)
+                state, metrics, rng = p_train_step(state, model_inputs, rng)
+
+                metrics = jax_utils.unreplicate(metrics)
+
+                if step % 25 == 0:
+                    metrics["train/step"] = step
+                    metrics["train/epoch"] = epoch
+                    wandb.log(metrics)
+
+                pm(metrics)
+
+                if step % 10000 == 0 and step > 0:
+                    if jax.process_index() == 0:
+                        params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
+                        ctx(ModelEvalWrapper(model, params), step)
+                        model.save_pretrained(OUTPUT_DIR, params=params)
+                        tokenizer.save_pretrained(OUTPUT_DIR)
+            del dataset
+            del train_dl
+            shutil.rmtree("../.cache/huggingface/datasets")
 
         if jax.process_index() == 0:
             params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
             model.save_pretrained(OUTPUT_DIR + f"_{epoch}", params=params)
             tokenizer.save_pretrained(OUTPUT_DIR + f"_{epoch}")
+
