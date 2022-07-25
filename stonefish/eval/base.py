@@ -50,10 +50,10 @@ class TTTEvalContext(EvalContext):
 
 @dataclass
 class ChessEvalContext:
-    sf_agent = StockfishAgent(2)
     def __call__(self, model, step):
+        sf_agent = StockfishAgent(2)
 
-        stock_pgn = get_pgns(model, self.sf_agent, N=1)
+        stock_pgn = get_pgns(model, sf_agent, N=1)
         random_pgn = get_pgns(model, RandomAgent(), N=1)
 
         game_log = create_game_log_for_wandb(stock_pgn + random_pgn)
