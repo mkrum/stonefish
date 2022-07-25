@@ -4,5 +4,5 @@ import glob
 setup(
     name="stonefish",
     scripts=glob.glob("bin/*"),
-    packages=["stonefish"],
+    packages=["stonefish", "stonefish.eval"],
 )
