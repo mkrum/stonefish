@@ -21,10 +21,16 @@ from chessenv import CMove
 class ModelEvalWrapper:
     model: Any
     params: Any
+    max_sel: bool = True
     input_rep: Any = CBoard
     output_rep: Any = MoveRep
 
-    def __call__(self, board: chess.Board, max_sel=True):
+    def __call__(self, board: chess.Board):
+        print("call")
+
+        if board.turn == chess.BLACK:
+            board = board.mirror()
+
         board_rep = CBoard.from_board(board)
 
         state = jnp.array(board_rep.to_array())
@@ -53,7 +59,7 @@ class ModelEvalWrapper:
 
             sel_logits = logits[:, -1, :] * mm + (1 - mm) * -1e8
 
-            if max_sel:
+            if self.max_sel:
                 sel = jnp.argmax(sel_logits)
             else:
                 sel_logits = torch.FloatTensor(np.array(sel_logits))
