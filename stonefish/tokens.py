@@ -4,13 +4,21 @@ from transformers import PreTrainedTokenizer
 
 from contextlib import contextmanager
 
-class BoardMoveSeq2SeqTokenizer(PreTrainedTokenizer):
 
+class BoardMoveSeq2SeqTokenizer(PreTrainedTokenizer):
     def __init__(self, max_len=1024):
         super().__init__(max_len=max_len, pad_token="<pad>")
         self._board_tokenizer = BoardTokenizer()
         self._move_tokenizer = MoveTokenizer()
         self.current_tokenizer = self._board_tokenizer
+
+    def save_vocabulary(self, *args, **kwargs):
+        pass
+        return ()
+
+    def load_vocabulary(self, *args, **kwargs):
+        pass
+        return ()
 
     @contextmanager
     def as_target_tokenizer(self):
@@ -62,13 +70,16 @@ class BoardTokenizer(PreTrainedTokenizer):
         "!ck",
         "cq",
         "!cq",
+        "<pad>",
     ]
 
     def __init__(self, max_len=1024):
         super().__init__(max_len=max_len, pad_token="<pad>")
 
     def _tokenize(self, sequence):
-        return [self.SYMBOLS[i] for i in self.rep.from_fen(sequence).to_array().tolist()]
+        return [
+            self.SYMBOLS[i] for i in self.rep.from_fen(sequence).to_array().tolist()
+        ]
 
     def _convert_token_to_id(self, token):
         return self.SYMBOLS.index(token)
@@ -83,6 +94,7 @@ class BoardTokenizer(PreTrainedTokenizer):
     def vocab_size(self):
         return len(self.SYMBOLS)
 
+
 class MoveTokenizer(PreTrainedTokenizer):
 
     rep = MoveToken
@@ -92,7 +104,7 @@ class MoveTokenizer(PreTrainedTokenizer):
         super().__init__(max_len=max_len, pad_token="<pad>")
 
     def _tokenize(self, sequence):
-        return [sequence[:2], sequence[2:]]
+        return ["<start>", sequence[:2], sequence[2:]]
 
     def _convert_token_to_id(self, token):
         return self.rep.from_str(token).to_int()
@@ -101,8 +113,8 @@ class MoveTokenizer(PreTrainedTokenizer):
         return self.rep.from_int(idx).to_str()
 
     def get_vocab(self):
-        return self.rep.SYMBOLS
+        return self.rep._tokens
 
     @property
     def vocab_size(self):
-        return len(self.rep.SYMBOLS)
+        return len(self.rep._tokens)

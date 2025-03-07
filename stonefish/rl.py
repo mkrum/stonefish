@@ -24,7 +24,6 @@ from stonefish.display import RLDisplay
 
 
 class RandomModel:
-
     def sample(self, state, tmasks):
         masks = tmasks.numpy()
         probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
@@ -33,14 +32,14 @@ class RandomModel:
             actions[i] = np.random.choice(9, p=p)
         return torch.LongTensor(actions).cuda(), tmasks.cuda()
 
-class SFModel:
 
+class SFModel:
     def __init__(self, sfa):
         self.sfa = sfa
 
     def sample(self, state, tmasks):
         moves = self.sfa.get_move_ints(state)
-        
+
         for i in range(moves.shape[0]):
             m = moves[i]
             t = tmasks[i]
@@ -51,7 +50,7 @@ class SFModel:
                 t = t.cpu().numpy()
                 probs = t / np.sum(t)
                 moves[i] = np.random.choice(len(probs), p=probs)
-        
+
         # fake transformer mask
         tmasks = torch.zeros((tmasks.shape[0], 2, 129))
         return torch.LongTensor(moves).cpu(), tmasks.cpu()
@@ -104,21 +103,21 @@ def mulit_player_generate_rollout(
 
         with torch.no_grad():
             action, legal_mask = model.sample(state, legal_mask)
-        
+
         next_state, next_legal_mask, reward, done = env.step(action)
 
-        #for i in range(done.shape[0]):
+        # for i in range(done.shape[0]):
         #    if done[i] and (reward[i] == 0):
         #        if player_id == 1:
         #            reward[i] = 1.0
         #        else:
         #            reward[i] = -1.0
 
-            #Kkjif done[i] and (reward[i] == 1) and player_id == 0:
-            #Kkj    print("an actual win")
+        # Kkjif done[i] and (reward[i] == 1) and player_id == 0:
+        # Kkj    print("an actual win")
 
-            #Kkjif done[i] and (reward[i] == -1) and player_id == 1:
-            #Kkj    print("..what?")
+        # Kkjif done[i] and (reward[i] == -1) and player_id == 1:
+        # Kkj    print("..what?")
 
         history = history.add(
             state,
@@ -185,7 +184,6 @@ class RLContext:
     entropy_weight: float = 0.01
     policy_weight: float = 0.01
 
-
     def get_data(self, env, model, state, legal_mask):
         history, state, legal_mask = generate_rollout(
             env, model, self.steps, state, legal_mask
@@ -202,7 +200,7 @@ class RLContext:
 
         return history, state, legal_mask
 
-    def compute_loss(self, opt,  model, state, mask, action, reward):
+    def compute_loss(self, opt, model, state, mask, action, reward):
         opt.zero_grad()
 
         logits, values = model(state, action, mask)
@@ -259,13 +257,11 @@ class RLContext:
                 flat_mask,
             ) = history.get_data()
 
-
             loss_info = self.compute_loss(
                 opt, model, flat_state, flat_mask, flat_action, flat_reward
             )
             reward_info = compute_reward_info(history)
             info = TrainStepInfo(0, it, loss_info + reward_info)
-
 
             logger.log_info(info)
 
@@ -398,6 +394,7 @@ def run(rank, world_size, config, log_path):
 
     dist.destroy_process_group()
 
+
 @dataclass
 class SLRLContext(RLContext):
 
@@ -418,8 +415,8 @@ class SLRLContext(RLContext):
 
         opt.zero_grad()
 
-        #labels = self._sfa.get_moves(state.cpu().numpy())
-        #labels = torch.LongTensor(labels).cuda()
+        # labels = self._sfa.get_moves(state.cpu().numpy())
+        # labels = torch.LongTensor(labels).cuda()
 
         logits, values = model(state, action, mask)
 
@@ -434,26 +431,27 @@ class SLRLContext(RLContext):
         )
         first_loss.backward()
 
-        #labels = torch.clip(labels, 0, 128)
-        #full_logits = model.policy(state, labels)
+        # labels = torch.clip(labels, 0, 128)
+        # full_logits = model.policy(state, labels)
 
-        #sl_logits = full_logits.reshape(-1, 129)
-        #labels = labels[:, 1:].flatten()
+        # sl_logits = full_logits.reshape(-1, 129)
+        # labels = labels[:, 1:].flatten()
 
-        #sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
-        #sl_loss.backward()
+        # sl_loss = self.sl_weight * F.cross_entropy(sl_logits, labels)
+        # sl_loss.backward()
 
         losses = [
             LossInfo("policy", self.policy_weight * policy_loss.item()),
             LossInfo("value", self.value_weight * value_loss.item()),
             LossInfo("entropy", self.entropy_weight * entropy_loss.item()),
-            #LossInfo("sl", sl_loss.item()),
+            # LossInfo("sl", sl_loss.item()),
         ]
-        
+
         self.sync_gradients(model, 1)
         opt.step()
 
         return losses
+
 
 class SLRLAgainstSFContext(SLRLContext):
 

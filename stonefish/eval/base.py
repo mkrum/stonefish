@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import chess
+import tqdm
+import wandb
 import numpy as np
 import torch
 import torch.nn as nn
@@ -17,7 +19,9 @@ from stonefish.env import (
     CChessEnvTorch,
     TTTEnvTwoPlayer,
     CChessEnvTorchTwoPlayer,
-    Stockfish,
+    StockfishAgent,
+    RandomAgent,
+    chess_rollout,
 )
 from stonefish.utils import ttt_state_to_str
 from chessenv.rep import CMove
@@ -42,7 +46,7 @@ class EvalModel:
 
 @dataclass
 class EvalContext:
-    # Should be Two player
+    # Should be two player
     eval_env: Any
 
     def __call__(self, model, batch_idx):
@@ -63,18 +67,19 @@ class TTTEvalContext(EvalContext):
 
 @dataclass
 class ChessEvalContext:
-    eval_env: Any = CChessEnvTorchTwoPlayer(1)
+    def __call__(self, model, step):
+        sf_agent = StockfishAgent(2)
 
-    def __call__(self, model, batch_idx):
+        stock_pgn = get_pgns(model, sf_agent, N=1)
+        random_pgn = get_pgns(model, RandomAgent(), N=1)
 
-        random_pgn = pgns_against_random_chess(model, self.eval_env, N=10)
+        game_log = create_game_log_for_wandb(stock_pgn + random_pgn)
 
-        stock_pgn = pgns_against_stockfish_chess(model, self.eval_env, max_sel=True, N=1)
-        stock_pgn = pgns_against_stockfish_chess(model, self.eval_env, max_sel=False, N=10)
+        #win_info = eval_against_random(model, N=100)
+        #game_log["eval/RandomWinPercentage"] = win_info
+        game_log["eval/step"] = step
 
-        win_info = eval_against_random(model, self.eval_env, N=100)
-
-        return ValidationInfo(0, batch_idx, [win_info, random_pgn, stock_pgn])
+        wandb.log(game_log)
 
 
 def print_example(model, states, actions, infer):
@@ -164,102 +169,33 @@ def random_action(masks):
     return torch.LongTensor(actions)
 
 
-def eval_against_random(model, env, N=100, max_sel=True):
+def eval_against_random(model, N=100, max_sel=True):
     wins = 0
-    for _ in range(N):
-
-        state, legal_mask = env.reset()
-
-        # Player 0 goes first, this will be immediately flipped in the loop
-        player_id = 1
-
-        done = [False]
-        while not done[0]:
-            player_id = (player_id + 1) % 2
-
-            if player_id == 0:
-                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
-            elif player_id == 1:
-                action = random_action(legal_mask)
-
-            state, legal_mask, reward, done = env.step(action)
-
-        # Not sure how best to check for win conditions, but this seems about right?
-        if (reward[0] == 1.0 and player_id == 0) or (
-            reward[0] == -1.0 and player_id == 1
-        ):
-            wins += 1.0
-
-    return TestInfo("Win Rate Against Random", wins / N)
+    opponent = RandomAgent()
+    for _ in tqdm.tqdm(range(N)):
+        game = chess_rollout(model, opponent)
+        outcome = game.headers["Result"]
+        if outcome == "1-0":
+            wins += 1
+    return wins / N
 
 
-def pgns_against_random_chess(model, env, N=10, max_sel=True):
+def get_pgns(model, opponent, N=10):
+    pgns = []
+    for _ in tqdm.tqdm(range(N)):
+        game = chess_rollout(model, opponent)
+        pgns.append(game)
+
+    return pgns
+
+
+def pgns_against_stockfish_chess(model, N=10, max_sel=True, level=1):
     pgn_str = ""
+    stockfish = StockfishAgent(level)
     for _ in range(N):
-
-        board = chess.Board()
-
-        state, legal_mask = env.reset()
-
-        # Player 0 goes first, this will be immediately flipped in the loop
-        player_id = 1
-
-        done = [False]
-        while not done[0]:
-            player_id = (player_id + 1) % 2
-
-            if player_id == 0:
-                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
-            elif player_id == 1:
-                action = random_action(legal_mask)
-
-            move = CMove.from_int(action[0].cpu().numpy()).to_move()
-            board.push(move)
-            state, legal_mask, reward, done = env.step(action)
-
-        game = chess.pgn.Game.from_board(board)
+        game = chess_rollout(model, stockfish)
         pgn_str += str(game) + "\n"
-
-    return TestInfo("Game Against Random", pgn_str)
-
-
-def pgns_against_stockfish_chess(model, env, N=10, max_sel=True, level=1):
-
-    stockfish = Stockfish(level)
-
-    pgn_str = ""
-
-    for _ in range(N):
-
-        board = chess.Board()
-
-        state, legal_mask = env.reset()
-
-        # Player 0 goes first, this will be immediately flipped in the loop
-        player_id = 1
-
-        done = [False]
-        while not done[0]:
-            player_id = (player_id + 1) % 2
-
-            if player_id == 0:
-                action, _ = model.sample(state, legal_mask, max_sel=max_sel)
-            elif player_id == 1:
-                board_rep = CBoardRep.from_tensor(state[0]).to_board()
-                action = stockfish(board_rep)
-                action = np.array([CMove.from_str(str(action)).to_int()])
-                action = torch.LongTensor(action)
-
-            move = CMove.from_int(action[0].cpu().numpy()).to_move()
-            board.push(move)
-            state, legal_mask, reward, done = env.step(action)
-
-        game = chess.pgn.Game.from_board(board)
-        pgn_str += str(game) + "\n"
-
-    del stockfish
-
-    return TestInfo("Game Against Stockfish", pgn_str)
+    return pgn_str
 
 
 def ttt_walkthrough(model, env, N=10, max_sel=True):
@@ -285,3 +221,21 @@ def ttt_walkthrough(model, env, N=10, max_sel=True):
             state, legal_mask, reward, done = env.step(action)
 
         return TestInfo("Sample TTT Games", sample_games)
+
+
+def _create_pgn_html(pgn):
+    header = """
+<link rel="stylesheet" type="text/css" href="https://pgn.chessbase.com/CBReplay.css"/>
+<script src="https://pgn.chessbase.com/jquery-3.0.0.min.js"></script>
+<script src="https://pgn.chessbase.com/cbreplay.js" type="text/javascript"></script>
+
+<div class="cbreplay">
+
+"""
+    return header + str(pgn) + "\n<div>"
+
+
+def create_game_log_for_wandb(games):
+    pgns = "\n\n".join([str(g) for g in games])
+    out = _create_pgn_html(pgns)
+    return {"eval/Games": wandb.Html(out)}

@@ -9,6 +9,7 @@ import numpy as np
 
 from chessenv import CBoard, CMove
 
+
 class EnumRep:
     """
     Simple enumeration based representation.
@@ -275,7 +276,7 @@ class MoveToken(EnumRep):
     )
 
     # All of the possible tokens in the move space.
-    _tokens = ["<start>"] + _squares + _top_promotions + _bottom_promotions
+    _tokens = ["<start>"] + _squares + _top_promotions + _bottom_promotions + ["<pad>"]
 
     _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_tokens)}
     _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_tokens)}
