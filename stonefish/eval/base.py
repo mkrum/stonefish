@@ -35,8 +35,9 @@ class EvalModel:
     @abstractmethod
     def act(self, board) -> move:
         """
-        Returns the the 
+        Returns the selected move
         """
+        ...
 
 
 @dataclass

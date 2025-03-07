@@ -32,6 +32,8 @@ def test_mask():
 
     print(mask.get_full_mask(move_token))
     print(move_token)
+    print(MoveRep.from_tensor(move_token[0]))
+    print(MoveRep.from_tensor(move_token[1]))
 
 
 if __name__ == "__main__":
