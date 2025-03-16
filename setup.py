@@ -1,8 +1,11 @@
-from distutils.core import setup
-import glob
+#!/usr/bin/env python
+# This file is for backward compatibility with older pip versions
+# The main configuration is in pyproject.toml
 
-setup(
-    name="stonefish",
-    scripts=glob.glob("bin/*"),
-    packages=["stonefish", "stonefish.eval"],
-)
+from setuptools import setup
+
+if __name__ == "__main__":
+    setup(
+        name="stonefish",
+        packages=["stonefish", "stonefish.eval", "stonefish.train"],
+    )
