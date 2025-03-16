@@ -1,7 +1,6 @@
 # Use multi-platform PyTorch image with CUDA support
 FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
-
 # Install base dependencies
 RUN apt update && apt install -y \
     build-essential \
@@ -12,7 +11,7 @@ RUN apt update && apt install -y \
     python3-dev \
     libffi-dev
 
-ENV LD_LIBRARY_PATH /usr/local/lib
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 # Setup MisterQueen
 WORKDIR /workdir
@@ -34,7 +33,7 @@ RUN cd chessenv && pip install -e . && cd ..
 # Setup Stockfish with architecture detection
 RUN git clone https://github.com/official-stockfish/Stockfish.git && cd Stockfish/src/ && make net && \
     ([ "$(uname -m)" = "arm64" ] || [ "$(uname -m)" = "aarch64" ] && make build ARCH=apple-silicon || make build ARCH=x86-64-modern) && cd
-ENV PATH $PATH:/workdir/Stockfish/src
+ENV PATH=$PATH:/workdir/Stockfish/src
 
 # Install dependencies first for better caching
 WORKDIR /stonefish
