@@ -11,7 +11,7 @@ pretrain_context: !PreTrainContext()
         batch_size: 1024
         shuffle: True
         drop_last: True
-    
+
     test_dl: !DataLoader()
         dataset: !TTTData()
             path: ./data/ttt_easy_test.csv
@@ -19,7 +19,7 @@ pretrain_context: !PreTrainContext()
             output_rep: !TTTMoveRep
         batch_size: 1024
         shuffle: True
-    
+
 model: !BaseModel()
     emb_dim: 32
     num_encoder_layers: 2

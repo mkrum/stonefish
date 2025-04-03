@@ -1,10 +1,9 @@
-import torch
-from stonefish.eval import move_vis
 from stonefish.config import (
-    load_model,
     load_config_and_create_parser,
+    load_model,
     parse_args_into_config,
 )
+from stonefish.eval import move_vis
 
 if __name__ == "__main__":
     config, parser = load_config_and_create_parser()

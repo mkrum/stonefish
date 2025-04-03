@@ -1,11 +1,12 @@
-from dataclasses import dataclass
 import time
-from typing import Dict, Any
-import torch
-import numpy as np
+from dataclasses import dataclass
+from typing import Dict
 
-from chessenv.rep import CMoves, CBoard, legal_mask_convert
-from stonefish.rep import MoveRep, MoveEnum
+import numpy as np
+import torch
+from chessenv.rep import legal_mask_convert
+
+from stonefish.rep import MoveRep
 
 
 @dataclass
@@ -19,10 +20,11 @@ class MoveMask:
 
         tensor_map = {}
         n = legal_mask.shape[0]
-        start = time.time()
+        # Timing information (unused)
+        _start = time.time()
 
         tensor_map = legal_mask_convert(np.int32(legal_mask.cpu().numpy()))
-        for (k, v) in tensor_map.items():
+        for k, v in tensor_map.items():
             tensor_map[k] = torch.LongTensor(v).to(legal_mask.device)
 
         return cls(n, tensor_map)

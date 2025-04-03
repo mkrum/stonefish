@@ -7,25 +7,24 @@ pretrain_context: !PreTrainContext()
 
     train_dl: !DataLoader()
         dataset: !FindKingData()
-            path: /nfs/one_train.csv 
+            path: /nfs/one_train.csv
             input_rep: !CBoardRep
             output_rep: !MoveEnum
         batch_size: 256
         shuffle: True
         drop_last: True
-    
+
     test_dl: !DataLoader()
         dataset: !FindKingData()
-            path: /nfs/one_test.csv 
+            path: /nfs/one_test.csv
             input_rep: !CBoardRep
             output_rep: !MoveEnum
         batch_size: 256
         shuffle: True
-    
+
 model: !EncoderOnly()
     input_rep: !CBoardRep
     output_rep: !MoveEnum
 
 opt: !Adam()
     lr: !!float 1e-4
-

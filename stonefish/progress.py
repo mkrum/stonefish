@@ -1,9 +1,9 @@
-from dataclasses import dataclass
 from collections import deque
+from dataclasses import dataclass
 from typing import List
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ class TestEntry:
 
 def rolling_mean(lines: List, attr: str, window_size: int):
 
-    window = deque(maxlen=window_size)
+    window: deque = deque(maxlen=window_size)
     means = []
     for line in lines:
         window.append(getattr(line, attr))
@@ -65,13 +65,13 @@ def rolling_mean(lines: List, attr: str, window_size: int):
 def read_file(path):
     with open(path, "r") as progress_file:
         lines = progress_file.readlines()
-    lines = [l.rstrip() for l in lines]
+    lines = [line.rstrip() for line in lines]
     return lines
 
 
 def split_data(lines):
-    train_lines = list(filter(lambda l: l[0:5] == "TRAIN", lines))
-    test_lines = list(filter(lambda l: l[0:4] == "TEST", lines))
+    train_lines = list(filter(lambda line: line[0:5] == "TRAIN", lines))
+    test_lines = list(filter(lambda line: line[0:4] == "TEST", lines))
     return train_lines, test_lines
 
 
@@ -82,8 +82,12 @@ if __name__ == "__main__":
     train_lines, test_lines = split_data(lines)
 
     start_time = TestEntry.from_line(test_lines[0]).time
-    test_lines = [TestEntry.from_line(l, start_time=start_time) for l in test_lines]
-    train_lines = [TrainEntry.from_line(l, start_time=start_time) for l in train_lines]
+    test_lines = [
+        TestEntry.from_line(line, start_time=start_time) for line in test_lines
+    ]
+    train_lines = [
+        TrainEntry.from_line(line, start_time=start_time) for line in train_lines
+    ]
     for t in test_lines:
         print(t.acc)
     rolling_mean(train_lines, "loss", 100)

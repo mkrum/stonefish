@@ -6,21 +6,21 @@ pretrain_context: !PreTrainContext()
 
     train_dl: !DataLoader()
         dataset: !ChessData()
-            path: /nfs/stonefish/data/train_mondo_5.csv 
+            path: /nfs/stonefish/data/train_mondo_5.csv
             input_rep: !CBoardRep
             output_rep: !MoveRep
         batch_size: 512
         shuffle: True
         drop_last: True
-    
+
     test_dl: !DataLoader()
         dataset: !ChessData()
-            path: /nfs/stonefish/data/test_mondo_5.csv 
+            path: /nfs/stonefish/data/test_mondo_5.csv
             input_rep: !CBoardRep
             output_rep: !MoveRep
         batch_size: 512
         shuffle: True
-    
+
 model: !BaseModel()
     input_rep: !CBoardRep
     output_rep: !MoveRep
@@ -30,4 +30,3 @@ model: !BaseModel()
 
 opt: !Adam()
     lr: !!float 1e-4
-

@@ -1,12 +1,10 @@
 import itertools
-from functools import partial
-from typing import List, Dict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Dict, List
 
 import chess
-import torch
 import numpy as np
-
+import torch
 from chessenv import CBoard, CMove
 
 
@@ -29,8 +27,8 @@ class EnumRep:
     "a"
     """
 
-    _str_to_int: Dict[str, int] = None
-    _int_to_str: Dict[str, int] = None
+    _str_to_int: Dict[str, int] = {}
+    _int_to_str: Dict[int, str] = {}
 
     def __init__(self, str_value: str):
         """
@@ -116,7 +114,7 @@ class ListEnum:
     ["a", "b"]
     """
 
-    token_type: EnumRep = None
+    token_type: type[EnumRep] = EnumRep
 
     def __init__(self, list_of_values: List[EnumRep]):
         self._values = list_of_values
@@ -170,8 +168,8 @@ class TupleEnum(ListEnum):
     be a specific size. Only supports single type tuples.
     """
 
-    length = None
-    token_type = None
+    length: int = 0
+    token_type: type[EnumRep] = EnumRep
 
     def __init__(self, list_of_values: List[EnumRep]):
         assert len(list_of_values) == self.length
@@ -239,7 +237,7 @@ class BoardToken(EnumRep):
     )
 
     _str_to_int: Dict[str, int] = {b: i for (i, b) in enumerate(_tokens)}
-    _int_to_str: Dict[str, int] = {i: b for (i, b) in enumerate(_tokens)}
+    _int_to_str: Dict[int, str] = {i: b for (i, b) in enumerate(_tokens)}
 
 
 class MoveToken(EnumRep):
@@ -279,7 +277,7 @@ class MoveToken(EnumRep):
     _tokens = ["<start>"] + _squares + _top_promotions + _bottom_promotions + ["<pad>"]
 
     _str_to_int: Dict[str, int] = {m: i for (i, m) in enumerate(_tokens)}
-    _int_to_str: Dict[str, int] = {i: m for (i, m) in enumerate(_tokens)}
+    _int_to_str: Dict[int, str] = {i: m for (i, m) in enumerate(_tokens)}
 
 
 class MoveRep(TupleEnum):
@@ -307,8 +305,8 @@ class MoveRep(TupleEnum):
     def __str__(self):
         return self._values[1].to_str() + self._values[2].to_str()
 
-    def to_str(self):
-        return str(self)
+    def to_str(self) -> str:
+        return str(self)  # type: ignore
 
     @classmethod
     def from_str(cls, str_value: str):
@@ -357,8 +355,8 @@ class MoveEnum:
     def to_str(self) -> str:
         try:
             return self.data.to_str()
-        except:
-            return "<invalid>"
+        except ValueError:
+            return "<invalid>"  # type: ignore
 
     def __str__(self) -> str:
         return self.to_str()
@@ -369,7 +367,7 @@ class MoveEnum:
 
     def to_int(self) -> int:
         """Convert representation into a integer"""
-        return self.data.to_int()
+        return self.data.to_int()  # type: ignore
 
     def __int__(self) -> int:
         return self.to_int()
@@ -512,7 +510,7 @@ class BoardRep(TupleEnum):
 
         # Place the pieces, load en-passant
         piece_squares = str_values[1:65]
-        for (i, square) in enumerate(chess.SQUARES_180):
+        for i, square in enumerate(chess.SQUARES_180):
 
             piece_symbol = piece_squares[i]
 
@@ -563,13 +561,13 @@ class BoardRep(TupleEnum):
     def to_fen(self) -> str:
         """Converts to FEN"""
         as_board = self.to_board()
-        return as_board.fen()
+        return as_board.fen()  # type: ignore
 
     def __str__(self):
         return self.to_fen()
 
-    def to_str(self):
-        return str(self)
+    def to_str(self) -> str:
+        return str(self)  # type: ignore
 
 
 @dataclass
@@ -584,7 +582,7 @@ class CBoardRep:
         return torch.LongTensor(self.cboard.to_array())
 
     @classmethod
-    def width(self):
+    def width(cls):
         return 69
 
     @classmethod
@@ -604,8 +602,8 @@ class CBoardRep:
     def __str__(self):
         return self.to_fen()
 
-    def to_str(self):
-        return str(self)
+    def to_str(self) -> str:
+        return str(self)  # type: ignore
 
 
 def _tokenizer__init__(self, int_values):
@@ -613,7 +611,6 @@ def _tokenizer__init__(self, int_values):
     self._values = int_values
 
 
-@classmethod
 def _tokenizer_from_str(cls, str_val):
     ids = cls.tokenizer.encode(str_val)
     return cls.from_int_list(ids)
@@ -624,13 +621,11 @@ def _tokenizer_to_str(self, skip_special_tokens=True):
     return ret
 
 
-@classmethod
 def _tokenizer_from_str_list(cls, tokens):
     ids = cls.tokenizer.convert_tokens_to_ids(tokens)
     return cls(ids)
 
 
-@classmethod
 def _tokenizer_from_int_list(cls, int_values):
     return cls(int_values)
 
@@ -643,14 +638,13 @@ def _tokenizer_to_int_list(self):
     return self._values
 
 
-@classmethod
-def _tokenizer_width(self):
-    return self.tokenizer.vocab_size
+def _tokenizer_width(cls):
+    return cls.tokenizer.vocab_size
 
 
 def create_tokenizer_rep(name, tokenizer):
 
-    TokenizerRep = type(
+    tokenizer_rep = type(
         name,
         (ListEnum,),
         {
@@ -667,4 +661,4 @@ def create_tokenizer_rep(name, tokenizer):
         },
     )
 
-    return TokenizerRep
+    return tokenizer_rep

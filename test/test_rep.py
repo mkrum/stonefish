@@ -1,8 +1,7 @@
 import chess
+
 import stonefish.utils as ut
-from stonefish.rep import BoardToken, MoveToken, BoardRep, MoveRep, create_tokenizer_rep
-from stonefish.rep import *
-import transformers
+from stonefish.rep import BoardRep, BoardToken, MoveRep, MoveToken
 
 
 def dictrep_type_test(cls):
@@ -46,7 +45,7 @@ def test_move_token():
 def test_board():
 
     for _ in range(100):
-        real_board = ut.randomize_board(range(0, 50))
+        real_board = ut.randomize_board(min_steps=0, max_steps=50)
 
         board = BoardRep.from_board(real_board)
         other_board = chess.Board()
@@ -59,7 +58,7 @@ def test_board():
 
 def test_move():
     move = MoveRep.from_str("e2d2")
-    MoveRep.from_uci(MoveRep.to_uci(move)) == move
+    assert MoveRep.from_uci(MoveRep.to_uci(move)) == move
     for _ in range(10):
         move = MoveRep.sample()
         listrep_test(move)

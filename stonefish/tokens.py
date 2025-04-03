@@ -1,8 +1,9 @@
+from contextlib import contextmanager
+
 from chessenv.rep import CBoard
-from stonefish.rep import MoveToken
 from transformers import PreTrainedTokenizer
 
-from contextlib import contextmanager
+from stonefish.rep import MoveToken
 
 
 class BoardMoveSeq2SeqTokenizer(PreTrainedTokenizer):

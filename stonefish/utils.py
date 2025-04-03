@@ -1,12 +1,13 @@
 from dataclasses import dataclass
 
 import chess
-import torch
 import numpy as np
+import torch
+from typing_extensions import Self
 
 
-def randomize_board(steps=range(10, 20)):
-    steps = list(steps)
+def randomize_board(min_steps=10, max_steps=20):
+    steps = list(range(min_steps, max_steps))
     board = chess.Board()
     for _ in range(np.random.choice(steps)):
         moves = list(board.legal_moves)
@@ -49,9 +50,9 @@ class RolloutTensor:
         return self.state.shape[1]
 
     def is_empty(self):
-        return self.state == None
+        return self.state is None
 
-    def add(self, state, action, next_state, reward, done, mask) -> "RolloutTensor":
+    def add(self, state, action, next_state, reward, done, mask) -> Self:
 
         state = state.unsqueeze(1)
         action = action.unsqueeze(1)
@@ -73,10 +74,10 @@ class RolloutTensor:
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
 
-    def stack(self, other) -> "RolloutTensor":
+    def stack(self, other) -> Self:
 
         if self.is_empty():
-            return other
+            return other  # type: ignore
 
         new_state = torch.cat((self.state, other.state), 1)
         new_action = torch.cat((self.action, other.action), 1)
@@ -88,7 +89,7 @@ class RolloutTensor:
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
 
-    def decay_(self, gamma, values) -> "RolloutTensor":
+    def decay_(self, gamma, values) -> None:
 
         self.reward[:, -1] += ~self.done[:, -1] * gamma * values
 
@@ -128,7 +129,7 @@ class RolloutTensor:
             flat_mask,
         )
 
-    def selfplay_decay_(self, gamma, values) -> "RolloutTensor":
+    def selfplay_decay_(self, gamma, values) -> None:
 
         for i in reversed(range(self.reward.shape[1] - 1)):
             self.reward[:, i] -= ~self.done[:, i] * (

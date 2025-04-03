@@ -1,20 +1,17 @@
 from dataclasses import dataclass
 from typing import Any
 
-import torch
-import torch.nn.functional as F
-
-from mllg import TestInfo, TrainInfo, ValidationInfo
+import torch.nn.functional as functional
+from mllg import TrainInfo, ValidationInfo
 
 from stonefish.mask import MoveMask
-from stonefish.rep import MoveRep
 
 
 def train_step(model, state, output):
     model.train()
 
     probs = model(state, output)
-    loss = F.cross_entropy(probs, output.to(probs.device).flatten())
+    loss = functional.cross_entropy(probs, output.to(probs.device).flatten())
     return loss
 
 
@@ -31,7 +28,7 @@ def seq_train_step(model, state, output):
     probs = probs[output != -1]
     output = output[output != -1]
 
-    loss = F.cross_entropy(probs, output.flatten().to(probs.device))
+    loss = functional.cross_entropy(probs, output.flatten().to(probs.device))
     return loss
 
 
@@ -53,7 +50,7 @@ def mask_train_step(model, state, output):
     probs = probs[output != -1]
     output = output[output != -1]
 
-    loss = F.cross_entropy(probs, output.flatten().to(probs.device))
+    loss = functional.cross_entropy(probs, output.flatten().to(probs.device))
     return loss
 
 
@@ -73,7 +70,7 @@ class PreTrainContext:
 
         for epoch in range(self.epochs):
 
-            for (batch_idx, (state, output)) in enumerate(self.train_dl):
+            for batch_idx, (state, output) in enumerate(self.train_dl):
                 opt.zero_grad()
                 loss = self.train_fn(model, state, output)
                 loss.backward()

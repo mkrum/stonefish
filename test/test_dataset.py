@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
+
 from stonefish.dataset import ChessData, TTTData
 from stonefish.rep import BoardRep, MoveRep
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
@@ -32,7 +33,7 @@ def test_in_dataloader():
     assert move_tensor.shape == torch.Size([8, 3])
 
 
-def test_dataset():
+def test_ttt_dataset():
     dataset = TTTData("data/ttt_test.csv", TTTBoardRep, TTTMoveRep)
     board_tensor, move_tensor = dataset[0]
 

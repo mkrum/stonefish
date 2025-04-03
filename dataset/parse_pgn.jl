@@ -8,7 +8,7 @@ using Chess
 using Chess.PGN
 using DataFrames
 using JLD2
- 
+
 """
     pop_chunk_from_list(conn::RedisConnection, list::Symbol,
     chunk_size::Int)::Vector{String}
@@ -46,12 +46,12 @@ function load_games(path::String)::Vector{String}
             buffer = buffer * line
         end
 
-        if line[1] == '1' 
+        if line[1] == '1'
             buffer = buffer * line
             push!(games, buffer)
             buffer = ""
         end
-        
+
         if length(line) > 2
             if (line[2] == '1') | (line[2] == '0')
                 buffer = buffer * line
@@ -59,7 +59,7 @@ function load_games(path::String)::Vector{String}
                 buffer = ""
             end
         end
-        
+
         if length(games) == 1e6
             lpush(conn, :games, games)
             games = []
@@ -86,7 +86,7 @@ function parse_game(chunk::Int=100000)
         end
 
         for game_string ∈ game_strings
-        
+
             game = gamefromstring(game_string; annotations=true)
 
             if headervalue(game, "Termination") != "Normal"

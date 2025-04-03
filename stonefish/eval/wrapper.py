@@ -1,20 +1,16 @@
-import chess
-import time
-import wandb
-from typing import Any
-import torch
-import torch.nn.functional as F
 from dataclasses import dataclass
-from torch.distributions.categorical import Categorical
-from stonefish.eval.base import ChessEvalContext
-import numpy as np
-import jax.numpy as jnp
+from typing import Any
 
-from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqTokenizer
-from stonefish.env import RandomAgent, StockfishAgent
-from stonefish.mask import MoveMask
-from stonefish.rep import MoveRep, CBoard, MoveToken
+import chess
+import jax.numpy as jnp
+import numpy as np
+import torch
+import torch.nn.functional as functional
 from chessenv import CMove
+from torch.distributions.categorical import Categorical
+
+from stonefish.mask import MoveMask
+from stonefish.rep import CBoard, MoveRep
 
 
 @dataclass(frozen=True)
@@ -44,13 +40,15 @@ class ModelEvalWrapper:
             legal_mask[0, mint] = 1.0
 
         move_mask = MoveMask.from_mask(legal_mask)
-        
+
         encoder_outputs = self.model.encode(input_ids=state, params=self.params)
 
         decoder_input_ids = jnp.zeros((state.shape[0], 1), dtype="i4")
 
         for _ in range(2):
-            outputs = self.model.decode(decoder_input_ids, encoder_outputs, params=self.params)
+            outputs = self.model.decode(
+                decoder_input_ids, encoder_outputs, params=self.params
+            )
             logits = outputs.logits
 
             mm = move_mask.get_mask(
@@ -63,7 +61,7 @@ class ModelEvalWrapper:
                 sel = jnp.argmax(sel_logits)
             else:
                 sel_logits = torch.FloatTensor(np.array(sel_logits))
-                post = F.log_softmax(sel_logits, dim=1)
+                post = functional.log_softmax(sel_logits, dim=1)
                 sel = jnp.array(Categorical(logits=post).sample().item())
 
             sel_arr = jnp.array([[sel]], dtype="i4")
@@ -73,4 +71,4 @@ class ModelEvalWrapper:
 
     @property
     def name(self):
-        return 'ModelWrapper'
+        return "ModelWrapper"

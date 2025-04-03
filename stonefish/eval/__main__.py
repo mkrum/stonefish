@@ -1,11 +1,10 @@
-from stonefish.eval import eval_model
-from stonefish.train import train_step
-from stonefish.eval import eval_model
 from stonefish.config import (
-    load_model,
     load_config_and_create_parser,
+    load_model,
     parse_args_into_config,
 )
+from stonefish.eval import eval_model
+from stonefish.train import train_step
 
 if __name__ == "__main__":
     config, parser = load_config_and_create_parser()

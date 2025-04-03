@@ -3,7 +3,7 @@ rl_context: !SLRLAgainstSFContext()
     steps: 80
     eval_fn: !ChessEvalContext()
     eval_freq: 500
-    entropy_weight: 0.0 
+    entropy_weight: 0.0
     value_weight: 0.0
     policy_weight: 0.0
     sl_weight: 0.0

@@ -6,25 +6,24 @@ pretrain_context: !PreTrainContext()
 
     train_dl: !DataLoader()
         dataset: !ChessData()
-            path: /nfs/stonefish/data/train_mondo_5.csv 
+            path: /nfs/stonefish/data/train_mondo_5.csv
             input_rep: !CBoardRep
             output_rep: !MoveEnum
         batch_size: 1024
         shuffle: True
         drop_last: True
-    
+
     test_dl: !DataLoader()
         dataset: !ChessData()
-            path: /nfs/stonefish/data/test_mondo_5.csv 
+            path: /nfs/stonefish/data/test_mondo_5.csv
             input_rep: !CBoardRep
             output_rep: !MoveEnum
         batch_size: 1024
         shuffle: True
-    
+
 model: !ClassModel()
     input_rep: !CBoardRep
     output_rep: !MoveEnum
 
 opt: !Adam()
     lr: !!float 1e-4
-

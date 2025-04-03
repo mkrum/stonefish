@@ -1,30 +1,15 @@
-from collections import deque
+from abc import abstractmethod
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
 from typing import Any
 
-import chess
-import tqdm
-import wandb
 import numpy as np
 import torch
-import torch.nn as nn
-import matplotlib.pyplot as plt
-
-from stonefish.rep import MoveToken, MoveRep, BoardRep, CBoardRep
-from chessplotlib import plot_board, plot_move, mark_move
+import tqdm
+import wandb
 from mllg import TestInfo, ValidationInfo
 
-from stonefish.env import (
-    CChessEnvTorch,
-    TTTEnvTwoPlayer,
-    CChessEnvTorchTwoPlayer,
-    StockfishAgent,
-    RandomAgent,
-    chess_rollout,
-)
+from stonefish.env import RandomAgent, StockfishAgent, TTTEnvTwoPlayer, chess_rollout
 from stonefish.utils import ttt_state_to_str
-from chessenv.rep import CMove
 
 
 class EvalModel:
@@ -37,7 +22,7 @@ class EvalModel:
         ...
 
     @abstractmethod
-    def act(self, board) -> move:
+    def act(self, board) -> Any:
         """
         Returns the selected move
         """
@@ -50,7 +35,7 @@ class EvalContext:
     eval_env: Any
 
     def __call__(self, model, batch_idx):
-        win_per = eval_against_random(model, self.eval_env, N=100)
+        win_per = eval_against_random(model, self.eval_env, n=100)
         return ValidationInfo(0, batch_idx, [TestInfo("WinPer", win_per)])
 
 
@@ -60,8 +45,8 @@ class TTTEvalContext(EvalContext):
     eval_env: Any = TTTEnvTwoPlayer(1)
 
     def __call__(self, model, batch_idx):
-        sample_games = ttt_walkthrough(model, self.eval_env, N=2)
-        win_info = eval_against_random(model, self.eval_env, N=100)
+        sample_games = ttt_walkthrough(model, self.eval_env, n=2)
+        win_info = eval_against_random(model, self.eval_env, n=100)
         return ValidationInfo(0, batch_idx, [win_info, sample_games])
 
 
@@ -70,20 +55,20 @@ class ChessEvalContext:
     def __call__(self, model, step):
         sf_agent = StockfishAgent(2)
 
-        stock_pgn = get_pgns(model, sf_agent, N=1)
-        random_pgn = get_pgns(model, RandomAgent(), N=1)
+        stock_pgn = get_pgns(model, sf_agent, n=1)
+        random_pgn = get_pgns(model, RandomAgent(), n=1)
 
         game_log = create_game_log_for_wandb(stock_pgn + random_pgn)
 
-        #win_info = eval_against_random(model, N=100)
-        #game_log["eval/RandomWinPercentage"] = win_info
+        # win_info = eval_against_random(model, n=100)
+        # game_log["eval/RandomWinPercentage"] = win_info
         game_log["eval/step"] = step
 
         wandb.log(game_log)
 
 
 def print_example(model, states, actions, infer):
-    for (s, a, i) in list(zip(states, actions, infer))[:16]:
+    for s, a, i in list(zip(states, actions, infer, strict=False))[:16]:
         example = s[s != -1]
         board_str = model.input_rep.from_tensor(example).to_str()
         pred_str = model.output_rep.from_tensor(i).to_str()
@@ -97,13 +82,13 @@ def eval_model(model, datal, train_fn, max_batch=20):
     total = 0.0
     losses = []
 
-    for (batch_idx, (s, a)) in enumerate(datal):
+    for batch_idx, (s, a) in enumerate(datal):
         model.eval()
 
         infer = model.inference(s, a.shape[1] - 1)
 
-        for i in range(len(infer)):
-            pred_str = model.output_rep.from_tensor(infer[i]).to_str()
+        for i, inference in enumerate(infer):
+            pred_str = model.output_rep.from_tensor(inference).to_str()
             label_str = model.output_rep.from_tensor(a[i]).to_str()
 
             total += 1.0
@@ -131,7 +116,7 @@ def seq_eval_model(model, datal, train_fn, max_batch=20):
     total = 0.0
     losses = []
 
-    for (batch_idx, (s, a)) in enumerate(datal):
+    for batch_idx, (s, a) in enumerate(datal):
         model.eval()
 
         infer = model.inference(s, a.shape[1] - 1)
@@ -164,43 +149,43 @@ def random_action(masks):
     masks = masks.numpy()
     probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
     actions = np.zeros(len(masks))
-    for (i, p) in enumerate(probs):
+    for i, p in enumerate(probs):
         actions[i] = np.random.choice(len(p), p=p)
     return torch.LongTensor(actions)
 
 
-def eval_against_random(model, N=100, max_sel=True):
+def eval_against_random(model, n=100, max_sel=True):
     wins = 0
     opponent = RandomAgent()
-    for _ in tqdm.tqdm(range(N)):
+    for _ in tqdm.tqdm(range(n)):
         game = chess_rollout(model, opponent)
         outcome = game.headers["Result"]
         if outcome == "1-0":
             wins += 1
-    return wins / N
+    return wins / n
 
 
-def get_pgns(model, opponent, N=10):
+def get_pgns(model, opponent, n=10):
     pgns = []
-    for _ in tqdm.tqdm(range(N)):
+    for _ in tqdm.tqdm(range(n)):
         game = chess_rollout(model, opponent)
         pgns.append(game)
 
     return pgns
 
 
-def pgns_against_stockfish_chess(model, N=10, max_sel=True, level=1):
+def pgns_against_stockfish_chess(model, n=10, max_sel=True, level=1):
     pgn_str = ""
     stockfish = StockfishAgent(level)
-    for _ in range(N):
+    for _ in range(n):
         game = chess_rollout(model, stockfish)
         pgn_str += str(game) + "\n"
     return pgn_str
 
 
-def ttt_walkthrough(model, env, N=10, max_sel=True):
+def ttt_walkthrough(model, env, n=10, max_sel=True):
     sample_games = "\n"
-    for _ in range(N):
+    for _ in range(n):
         state, legal_mask = env.reset()
 
         # Player 0 goes first, this will be immediately flipped in the loop

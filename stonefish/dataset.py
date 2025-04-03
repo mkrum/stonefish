@@ -3,18 +3,14 @@ Simple pytorch dataset for the chess data
 """
 
 import chess
-import torch
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
-from stonefish.rep import BoardRep, MoveRep, MoveEnum
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
-from torch.nn.utils.rnn import pad_sequence
-
-from chessenv import CBoard
 
 
 def default_collate_fn(batch):
-    source, target = zip(*batch)
+    source, target = zip(*batch, strict=False)
 
     source = pad_sequence(source, batch_first=True, padding_value=-100)
     target = pad_sequence(target, batch_first=True, padding_value=-100)
@@ -47,13 +43,6 @@ class ChessData(Dataset):
 
         board_tokens = self.input_rep.from_fen(board_fen)
         move = self.output_rep.from_str(actions)
-
-        try:
-            move.to_str()
-        except:
-            import pdb
-
-            pdb.set_trace()
 
         return board_tokens.to_tensor(), move.to_tensor()
 

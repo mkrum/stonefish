@@ -1,10 +1,10 @@
 import torch
-from torch.utils.data import DataLoader
 from torch.optim import Adam
+from torch.utils.data import DataLoader
 
+from stonefish.dataset import ChessData
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-from stonefish.dataset import ChessData
 from stonefish.train.base import seq_train_step
 
 

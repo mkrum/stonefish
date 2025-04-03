@@ -1,25 +1,19 @@
 import multiprocessing as mp
-from collections import deque
 import time
-
-import tqdm
-import torch
-import torch.optim as optim
-import torch.nn as nn
-import torch.nn.functional as F
+from collections import deque
+from dataclasses import dataclass
 
 import chess
-import atexit
-import pyspiel
 import chess.engine
 import chess.pgn
-
 import numpy as np
-from dataclasses import dataclass, field
+import torch
+import torch.nn as nn
+import torch.nn.functional as functional
+import torch.optim as optim
 
 from stonefish.model import BaseModel
 from stonefish.rep import BoardRep, MoveRep
-import stonefish.utils as ut
 
 
 @dataclass
@@ -102,9 +96,9 @@ def rollout(white_engine, black_engine):
         board.push(move)
 
     outcome = board.outcome()
-    if outcome.winner or outcome.winner == None:
-        print(chess.pgn.Game().from_board(board))
-    if outcome.winner != None:
+    # Print the game in any case
+    print(chess.pgn.Game().from_board(board))
+    if outcome.winner is not None:
         return (int(outcome.winner), int(not outcome.winner))
     else:
         return (0.5, 0.5)
@@ -216,7 +210,7 @@ class RolloutTensor:
         return self.state.shape[1]
 
     def is_empty(self):
-        return self.state == None
+        return self.state is None
 
     def add(self, state, action, next_state, reward, done) -> "RolloutTensor":
 
@@ -232,7 +226,7 @@ class RolloutTensor:
             new_state, new_action, new_next_state, new_reward, new_done
         )
 
-    def stack(self, other) -> "RolloutTensor":
+    def stack(self, other) -> "RolloutTensor":  # type: ignore
 
         if self.is_empty():
             return other
@@ -246,7 +240,7 @@ class RolloutTensor:
             new_state, new_action, new_next_state, new_reward, new_done
         )
 
-    def decay_(self, gamma, values) -> "RolloutTensor":
+    def decay_(self, gamma, values):
 
         self.reward[:, -1] += ~self.done[:, -1] * gamma * values
 
@@ -277,7 +271,7 @@ def worker(state_q, action_q):
 
     while True:
         action = action_q.get()
-        start = time.time()
+        # No need to measure timing here
         out = env.step(action)
         state_q.put(out)
 
@@ -309,7 +303,7 @@ class StackedEnv:
             aq.put(actions[i])
 
         out = [s.get() for s in self.state_qs]
-        states, rewards, dones = zip(*out)
+        states, rewards, dones = zip(*out, strict=False)
         return torch.stack(states), torch.stack(rewards), torch.stack(dones)
 
 
@@ -343,16 +337,16 @@ if __name__ == "__main__":
         ]
     )
 
-    pl_hist = deque(maxlen=100)
-    vl_hist = deque(maxlen=100)
-    progress = deque(maxlen=100)
+    pl_hist: deque = deque(maxlen=100)
+    vl_hist: deque = deque(maxlen=100)
+    progress: deque = deque(maxlen=100)
 
     state = env.reset()
     for it in range(int(100)):
 
         history = RolloutTensor.empty()
 
-        times = {"step": [], "model": [], "env": []}
+        times: dict[str, list] = {"step": [], "model": [], "env": []}
 
         for _ in range(32):
 
@@ -378,17 +372,17 @@ if __name__ == "__main__":
 
         bench = state[:1]
         while bench.shape[0] <= 512:
-            times = []
+            bench_times: list[float] = []
             bench_ = bench.squeeze(1)
             for _ in range(100):
                 start = time.time()
                 with torch.no_grad():
                     policy.sample(bench_, max_len=2)
                 end = time.time()
-                times.append(end - start)
+                bench_times.append(end - start)
 
             print(f"{bench.shape[0]}", end="")
-            for t in times:
+            for t in bench_times:
                 print(f",{t}", end="")
             print()
             bench = bench.repeat(2, 1, 1)
@@ -431,7 +425,7 @@ if __name__ == "__main__":
 
         opt.zero_grad()
 
-        value_loss = F.mse_loss(values, flat_reward.unsqueeze(-1))
+        value_loss = functional.mse_loss(values, flat_reward.unsqueeze(-1))
         policy_loss = -1.0 * torch.mean(flat_reward.unsqueeze(-1).cuda() * logits)
 
         loss = value_loss + policy_loss

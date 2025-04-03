@@ -1,26 +1,21 @@
-import os
 import copy
+import os
 import random
-from typing import Any
 from dataclasses import dataclass
-from collections import deque
-import stonefish.config
+from typing import Any
 
-import torch
-import torch.nn.functional as F
-import torch.optim as optim
-import torch.multiprocessing as mp
-import torch.distributed as dist
 import numpy as np
-
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.nn.functional as functional
+import torch.optim as optim
+from chessenv.sfa import SFArray
 from mllg import LogWriter, LossInfo, TrainStepInfo
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
-from chessenv.sfa import SFArray
 
-from stonefish.mask import MoveMask
-from stonefish.utils import RolloutTensor
-from stonefish.rep import MoveRep
 from stonefish.display import RLDisplay
+from stonefish.utils import RolloutTensor
 
 
 class RandomModel:
@@ -28,7 +23,7 @@ class RandomModel:
         masks = tmasks.numpy()
         probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
         actions = np.zeros(len(masks))
-        for (i, p) in enumerate(probs):
+        for i, p in enumerate(probs):
             actions[i] = np.random.choice(9, p=p)
         return torch.LongTensor(actions).cuda(), tmasks.cuda()
 
@@ -205,7 +200,7 @@ class RLContext:
 
         logits, values = model(state, action, mask)
 
-        value_loss = F.mse_loss(values, reward)
+        value_loss = functional.mse_loss(values, reward)
         policy_loss = -1.0 * torch.mean((reward - values.detach()) * logits)
         entropy_loss = -torch.mean(torch.sum(logits * torch.exp(logits), dim=-1))
 
@@ -275,7 +270,9 @@ class RLContext:
 
 
 def polyak_update(polyak_factor, target_network, network):
-    for target_param, param in zip(target_network.parameters(), network.parameters()):
+    for target_param, param in zip(
+        target_network.parameters(), network.parameters(), strict=False
+    ):
         target_param.data.copy_(
             polyak_factor * param.data + target_param.data * (1.0 - polyak_factor)
         )
@@ -420,7 +417,7 @@ class SLRLContext(RLContext):
 
         logits, values = model(state, action, mask)
 
-        value_loss = F.mse_loss(values, reward)
+        value_loss = functional.mse_loss(values, reward)
         policy_loss = -1.0 * torch.mean((reward - values.detach()) * logits)
         entropy_loss = -torch.mean(torch.sum(logits * torch.exp(logits), dim=-1))
 

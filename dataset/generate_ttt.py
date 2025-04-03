@@ -1,6 +1,7 @@
-import random
-import pyspiel
 import copy
+import random
+
+import pyspiel
 from open_spiel.python.algorithms import minimax
 
 

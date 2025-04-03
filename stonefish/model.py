@@ -2,22 +2,19 @@
 This contains the basic transformer model. It wraps the basic nn.Transformer
 into a larger module that adds additional functionality.
 """
+
 import math
-import time
 from typing import Optional
 
 import torch
-import numpy as np
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
+import torch.nn.functional as functional
+from chessenv.rep import CMoves
 from torch import Tensor
 from torch.distributions.categorical import Categorical
-from transformers import AutoModel, GPT2LMHeadModel, T5ForConditionalGeneration
-from stonefish.mask import MoveMask
 
+from stonefish.mask import MoveMask
 from stonefish.rep import MoveRep
-from chessenv.rep import CMoves
 
 
 def transformer_split_encode(
@@ -290,7 +287,7 @@ class BaseModel(nn.Module):
 
         memory = self._encode(pos_embed_state, mask)
 
-        for i in range(max_len):
+        for _ in range(max_len):
             decode = self._action_embed(tokens)
             tgt_mask = torch.zeros(decode.shape[0], decode.shape[1]).bool()
             tgt_mask = tgt_mask.to(self.device)
@@ -480,7 +477,7 @@ class TBased(nn.Module):
         out, prelogits = self.policy(state, action, return_hidden=True)
         masked_prelogits = prelogits * full_mask + (1 - full_mask) * -1e8
 
-        logits = F.log_softmax(masked_prelogits, dim=-1)
+        logits = functional.log_softmax(masked_prelogits, dim=-1)
         sel_logits = batched_index_select(logits, 2, action[:, 1:].unsqueeze(-1))
         total_logits = torch.sum(sel_logits, dim=1)
 
@@ -524,7 +521,7 @@ class TBased(nn.Module):
             saved_mask[:, i, :] = action_mask
 
             logits = action_mask * logits + (1 - action_mask) * -1e8
-            logits = F.log_softmax(logits, dim=1)
+            logits = functional.log_softmax(logits, dim=1)
 
             if max_sel:
                 next_value = torch.argmax(logits, dim=-1).view(-1, 1)
@@ -568,7 +565,7 @@ class ACBase(nn.Module):
             torch.load("/nfs/bigclass/model_3.pth", map_location=self.device)
         )
 
-        self.act = F.log_softmax
+        self.act = functional.log_softmax
         self.load_state_dict(torch.load("/nfs/class_rl_invert/model_600.pth"))
 
     def forward(self, state, action, logit_mask=None):
@@ -615,7 +612,7 @@ class SimpleRL(nn.Module):
             nn.Tanh(),
             nn.Linear(128, 9),
         )
-        self.act = F.log_softmax
+        self.act = functional.log_softmax
 
         self.V = nn.Sequential(
             nn.Linear(27, 128),

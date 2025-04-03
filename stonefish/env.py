@@ -1,26 +1,20 @@
-import multiprocessing as mp
-from dataclasses import dataclass
 import random
+from dataclasses import dataclass
 
-import torch
 import chess
 import chess.engine
 import chess.pgn
 import numpy as np
-
 import pyspiel
-from open_spiel.python.rl_environment import Environment, StepType
-
-from stonefish.model import BaseModel
-from stonefish.rep import BoardRep, MoveRep
-from chessenv import CChessEnv, SFCChessEnv, CMove, CMoves
+import torch
+from chessenv import CChessEnv
 from chessenv.sfa import SFArray
+from open_spiel.python.rl_environment import Environment, StepType
 
 
 @dataclass
 class ChessAgent:
-    def __call__(self, board: chess.Board) -> chess.Move:
-        ...
+    def __call__(self, board: chess.Board) -> chess.Move: ...
 
     @property
     def name(self):
@@ -69,7 +63,7 @@ def chess_rollout(white_engine, black_engine):
             move = white_engine(board)
         elif board.turn == chess.BLACK:
             move = black_engine(board)
-        
+
         board.push(move)
 
     game = chess.pgn.Game().from_board(board)
@@ -154,7 +148,7 @@ class TTTEnv:
         states = [o.observations["info_state"][0] for o in out]
 
         legal_mask = np.zeros((self.n, 9))
-        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
+        for i, la in enumerate([o.observations["legal_actions"] for o in out]):
             for a in la:
                 legal_mask[i, a] = 1.0
 
@@ -179,7 +173,7 @@ class TTTEnv:
         rewards = np.zeros((self.n,))
         dones = np.zeros((self.n,))
 
-        for (i, a) in enumerate(action):
+        for i, a in enumerate(action):
             a = np.array([a.item()])
 
             current_player = self._envs[i].get_state.current_player()
@@ -231,7 +225,7 @@ class TTTEnvTwoPlayer(TTTEnv):
         rewards = np.zeros((self.n,))
         dones = np.zeros((self.n,))
 
-        for (i, a) in enumerate(action):
+        for i, a in enumerate(action):
             a = np.array([a.item()])
 
             current_player = self._envs[i].get_state.current_player()
@@ -272,7 +266,7 @@ class ChessSpielEnv:
         states = [o.observations["info_state"][0] for o in out]
 
         legal_mask = np.zeros((self.n, 9))
-        for (i, la) in enumerate([o.observations["legal_actions"] for o in out]):
+        for i, la in enumerate([o.observations["legal_actions"] for o in out]):
             for a in la:
                 legal_mask[i, a] = 1.0
 
@@ -283,7 +277,7 @@ class ChessSpielEnv:
         legal_mask = np.zeros((self.n, 9))
         rewards = np.zeros((self.n,))
         dones = np.zeros((self.n,))
-        for (i, a) in enumerate(action):
+        for i, a in enumerate(action):
             a = np.array([a.item()])
 
             out = self._envs[i].step(a)

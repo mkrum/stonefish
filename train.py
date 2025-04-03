@@ -1,38 +1,40 @@
-import optax
-import shutil
 import copy
 import os
-import jax
+import shutil
 from collections import deque
+
+import flax.linen as nn
+import jax
+import jax.numpy as jnp
+import numpy as np
+import optax
+import wandb
 from datasets import load_dataset
-from transformers.models.t5.modeling_flax_t5 import FlaxT5ForConditionalGenerationModule, FlaxT5Stack
+from flax import jax_utils
+from flax.training import train_state
+from flax.training.common_utils import onehot, shard
+from torch.utils.data import DataLoader
 from transformers import (
+    DataCollatorForSeq2Seq,
     FlaxT5ForConditionalGeneration,
     T5Config,
-    Trainer,
-    TrainingArguments,
-    DataCollatorForSeq2Seq,
 )
-from torch.utils.data import DataLoader
-from flax.training.common_utils import onehot, shard
-from flax.training import train_state
-from flax import jax_utils
-from typing import Any
-import jax.numpy as jnp
+from transformers.models.t5.modeling_flax_t5 import (
+    FlaxT5ForConditionalGenerationModule,
+    FlaxT5Stack,
+)
 
-import numpy as np
-import flax.linen as nn
-
-from stonefish.tokens import BoardTokenizer, MoveTokenizer, BoardMoveSeq2SeqTokenizer
 from stonefish.eval.base import ChessEvalContext
 from stonefish.eval.wrapper import ModelEvalWrapper
-from transformers import AutoConfig
-import wandb
+from stonefish.tokens import BoardMoveSeq2SeqTokenizer, BoardTokenizer, MoveTokenizer
 
 board_tokenizer = BoardTokenizer()
 move_tokenizer = MoveTokenizer()
 
-class NonsharedFlaxT5ForConditionalGenerationModule(FlaxT5ForConditionalGenerationModule):
+
+class NonsharedFlaxT5ForConditionalGenerationModule(
+    FlaxT5ForConditionalGenerationModule
+):
 
     def setup(self):
         self.model_dim = self.config.d_model
@@ -68,8 +70,10 @@ class NonsharedFlaxT5ForConditionalGenerationModule(FlaxT5ForConditionalGenerati
             dtype=self.dtype,
         )
 
+
 class NonsharedFlaxT5ForConditionalGeneration(FlaxT5ForConditionalGeneration):
-     module_class = NonsharedFlaxT5ForConditionalGenerationModule
+    module_class = NonsharedFlaxT5ForConditionalGenerationModule
+
 
 def prepare_data(example):
     board = example["board"]
@@ -106,7 +110,12 @@ def train_step(state, batch, rng):
     new_state = state.apply_gradients(grads=grad)
 
     metrics = jax.lax.pmean(
-            {"train/loss": out[0], "train/accuracy": out[1][0], "train/FullAccuracy": out[1][1], "train/learning_rate": linear_decay_lr_schedule_fn(state.step)},
+        {
+            "train/loss": out[0],
+            "train/accuracy": out[1][0],
+            "train/FullAccuracy": out[1][1],
+            "train/learning_rate": linear_decay_lr_schedule_fn(state.step),
+        },
         axis_name="batch",
     )
     return new_state, metrics, new_rng
@@ -128,7 +137,7 @@ def make_print():
 
 
 if __name__ == "__main__":
-    config = T5Config() #AutoConfig.from_pretrained("t5-base")
+    config = T5Config()  # AutoConfig.from_pretrained("t5-base")
     config.tie_word_embeddings = False
 
     tokenizer = BoardMoveSeq2SeqTokenizer()
@@ -142,7 +151,6 @@ if __name__ == "__main__":
     )
 
     OUTPUT_DIR = "./t5chess"
-
 
     num_train_steps = 500_000
     warmup_steps = 10_000
@@ -186,17 +194,16 @@ if __name__ == "__main__":
 
     pm = make_print()
 
-
     data_files = os.listdir("../data")
-        
+
     step = 0
     for epoch in range(10):
-        
+
         for data_file in data_files:
 
             dataset = load_dataset(
                 "csv",
-                data_files={"train": f'../data/{data_file}'},
+                data_files={"train": f"../data/{data_file}"},
                 column_names=["board", "move"],
             )
 
@@ -216,14 +223,16 @@ if __name__ == "__main__":
                 shuffle=True,
             )
 
-            for (idx, batch) in enumerate(train_dl):
+            for _, batch in enumerate(train_dl):
                 step += 1
                 del batch["board"]
                 del batch["move"]
                 del batch["token_type_ids"]
 
                 local_host_model_inputs = {
-                    key: np.split(batch.data[key], num_of_hosts, axis=0)[current_host_idx]
+                    key: np.split(batch.data[key], num_of_hosts, axis=0)[
+                        current_host_idx
+                    ]
                     for key, value in batch.data.items()
                 }
 
@@ -241,7 +250,9 @@ if __name__ == "__main__":
 
                 if step % 10000 == 0 and step > 0:
                     if jax.process_index() == 0:
-                        params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
+                        params = jax.device_get(
+                            jax.tree_map(lambda x: x[0], state.params)
+                        )
                         ctx(ModelEvalWrapper(model, params), step)
                         model.save_pretrained(OUTPUT_DIR, params=params)
                         tokenizer.save_pretrained(OUTPUT_DIR)
@@ -253,4 +264,3 @@ if __name__ == "__main__":
             params = jax.device_get(jax.tree_map(lambda x: x[0], state.params))
             model.save_pretrained(OUTPUT_DIR + f"_{epoch}", params=params)
             tokenizer.save_pretrained(OUTPUT_DIR + f"_{epoch}")
-

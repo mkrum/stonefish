@@ -1,8 +1,7 @@
-from stonefish.env import CChessEnvTorch
-import torch
 import numpy as np
-from stonefish.utils import RolloutTensor
+import torch
 
+from stonefish.env import CChessEnvTorch
 from stonefish.mask import MoveMask
 from stonefish.rep import MoveRep
 
@@ -11,7 +10,7 @@ def random_action(masks):
     masks = masks.numpy()
     probs = masks / np.sum(masks, axis=1).reshape(-1, 1)
     actions = np.zeros(len(masks))
-    for (i, p) in enumerate(probs):
+    for i, p in enumerate(probs):
         actions[i] = np.random.choice(len(p), p=p)
     return torch.LongTensor(actions)
 

@@ -11,7 +11,7 @@ using Chess.PGN
     populate_fen_queue(path::String)
 
 Fills the "games" list in our redis server with the list of raw pgn games
-stored in `path`. 
+stored in `path`.
 """
 function populate_fen_queue(path::String)
     conn = RedisConnection()
