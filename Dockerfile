@@ -30,14 +30,25 @@ ENV PATH=$PATH:/workdir/Stockfish/src
 
 # Install Python dependencies (CPU-only version)
 WORKDIR /stonefish
-COPY requirements-cpu.txt /stonefish/
-RUN pip install --no-cache-dir -r requirements-cpu.txt
 # Manually install PyTorch CPU version to avoid CUDA issues
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+COPY requirements-cpu.txt /stonefish/
+RUN pip install --no-cache-dir -r requirements-cpu.txt --index-url https://pypi.org/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # Install stonefish
 COPY . /stonefish
 RUN pip install -e .
 
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    clang \
+    libc++-dev \
+    libc++abi-dev
+
+# Set clang as the default compiler
+ENV CC=clang
+ENV CXX=clang++
+
+RUN pip install open_spiel
 # Set default command
 CMD ["bash"]
