@@ -1,0 +1,32 @@
+# Standard ResNet model configuration for chess
+# Uses flat board representation (69 dimensions)
+
+pretrain_context: !PreTrainContext()
+    train_fn: !train_step
+    eval_fn: !eval_model
+
+    train_dl: !DataLoader()
+        dataset: !ChessData()
+            path: /nfs/stonefish/data/train_mondo_5.csv
+            input_rep: !CBoardRep
+            output_rep: !MoveEnum
+        batch_size: 256
+        shuffle: True
+        drop_last: True
+
+    test_dl: !DataLoader()
+        dataset: !ChessData()
+            path: /nfs/stonefish/data/test_mondo_5.csv
+            input_rep: !CBoardRep
+            output_rep: !MoveEnum
+        batch_size: 256
+        shuffle: True
+
+model: !ChessResNet()
+    input_dim: 69
+    hidden_dim: 4096
+    num_blocks: 8
+    output_dim: 5700
+
+opt: !Adam()
+    lr: !!float 1e-4

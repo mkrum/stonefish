@@ -8,7 +8,7 @@ build-gpu:
 	docker build -f Dockerfile.gpu -t {{IMAGE_NAME}}:gpu . --progress=plain
 
 test:
-	docker run {{IMAGE_NAME}}:cpu pytest -s
+	docker run -v $PWD:/stonefish {{IMAGE_NAME}}:cpu pytest -s
 
 # Add dependency with Poetry
 add package:
