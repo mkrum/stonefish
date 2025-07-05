@@ -9,7 +9,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as functional
-from chessenv.rep import CMoves
+from fastchessenv.rep import CMoves
 from torch import Tensor
 from torch.distributions.categorical import Categorical
 

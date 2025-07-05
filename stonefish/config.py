@@ -1,6 +1,6 @@
 import argparse
 
-import chessenv.env
+import fastchessenv.env
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -25,7 +25,7 @@ expose_module(stonefish.rep)
 expose_module(stonefish.ttt)
 expose_module(stonefish.train.base)
 expose_module(stonefish.eval.base)
-expose_module(chessenv.env)
+expose_module(fastchessenv.env)
 expose_module(stonefish.env)
 expose_module(stonefish.rl)
 

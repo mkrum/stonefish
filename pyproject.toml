@@ -24,6 +24,8 @@ dependencies = [
     "mllg",
     "optax",
     "wandb",
+    "fastchessenv",
+    "open-spiel",
 ]
 
 [project.scripts]

@@ -4,7 +4,7 @@ from typing import Dict
 
 import numpy as np
 import torch
-from chessenv.rep import legal_mask_convert
+from fastchessenv.rep import legal_mask_convert
 
 from stonefish.rep import MoveRep
 

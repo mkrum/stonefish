@@ -10,7 +10,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.nn.functional as functional
 import torch.optim as optim
-from chessenv.sfa import SFArray
+from fastchessenv.sfa import SFArray
 from mllg import LogWriter, LossInfo, TrainStepInfo
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
 

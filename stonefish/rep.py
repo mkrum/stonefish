@@ -5,7 +5,7 @@ from typing import Dict, List
 import chess
 import numpy as np
 import torch
-from chessenv import CBoard, CMove
+from fastchessenv import CBoard, CMove
 
 
 class EnumRep:

@@ -7,8 +7,8 @@ import chess.pgn
 import numpy as np
 import pyspiel
 import torch
-from chessenv import CChessEnv
-from chessenv.sfa import SFArray
+from fastchessenv import CChessEnv
+from fastchessenv.sfa import SFArray
 from open_spiel.python.rl_environment import Environment, StepType
 
 

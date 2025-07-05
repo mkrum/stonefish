@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from chessenv.rep import CBoard
+from fastchessenv.rep import CBoard
 from transformers import PreTrainedTokenizer
 
 from stonefish.rep import MoveToken

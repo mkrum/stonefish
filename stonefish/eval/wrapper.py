@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import torch
 import torch.nn.functional as functional
-from chessenv import CMove
+from fastchessenv import CMove
 from torch.distributions.categorical import Categorical
 
 from stonefish.mask import MoveMask
