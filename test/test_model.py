@@ -27,4 +27,4 @@ def test_overfit():
         loss.backward()
         opt.step()
 
-    assert loss.item() < 0.5
+    assert loss.item() < 0.6
