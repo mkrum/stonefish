@@ -1,0 +1,29 @@
+# Lczero dataset configuration for chess training
+# Compatible with stonefish yamlargs system
+
+data:
+  _target_: stonefish.dataset.LczeroChessDataset
+  split: train
+  sample_size: 100000  # Set to null for full dataset
+  dataset_name: mkrum/ParsedChess
+
+dataloader:
+  batch_size: 128
+  shuffle: true
+  num_workers: 4
+  pin_memory: true
+  drop_last: true
+
+# For validation
+val_data:
+  _target_: stonefish.dataset.LczeroChessDataset
+  split: test
+  sample_size: 10000
+  dataset_name: mkrum/ParsedChess
+
+val_dataloader:
+  batch_size: 128
+  shuffle: false
+  num_workers: 2
+  pin_memory: true
+  drop_last: false

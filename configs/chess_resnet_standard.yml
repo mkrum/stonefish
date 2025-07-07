@@ -1,0 +1,55 @@
+# Standard ResNet configuration for chess move prediction
+# Uses flat board representation (69 dimensions)
+
+model:
+  _target_: stonefish.resnet.ChessResNet
+  input_dim: 69
+  hidden_dim: 4096
+  num_blocks: 8
+  output_dim: 5700
+
+dataset:
+  _target_: stonefish.dataset.HuggingFaceChessDataset
+  split: train
+  sample_size: 100000
+  dataset_name: mkrum/ParsedChess
+
+val_dataset:
+  _target_: stonefish.dataset.HuggingFaceChessDataset
+  split: test
+  sample_size: 10000
+  dataset_name: mkrum/ParsedChess
+
+dataloader:
+  batch_size: 256
+  shuffle: true
+  num_workers: 4
+  pin_memory: true
+  drop_last: true
+
+val_dataloader:
+  batch_size: 256
+  shuffle: false
+  num_workers: 2
+  pin_memory: true
+  drop_last: false
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.001
+  weight_decay: 0.01
+
+loss:
+  _target_: torch.nn.CrossEntropyLoss
+
+training:
+  epochs: 10
+  log_interval: 100
+  save_interval: 1000
+  output_dir: models/chess_resnet_standard
+
+# Optional wandb config
+wandb:
+  project: chess-resnet
+  name: standard-resnet-69dim
+  tags: [resnet, standard, chess]
