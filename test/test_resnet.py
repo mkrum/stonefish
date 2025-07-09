@@ -37,7 +37,7 @@ def test_chess_resnet_creation():
     # Test forward pass
     batch_size = 16
     x = torch.randn(batch_size, 69)
-    output = model(x)
+    output = model.inference(x)
 
     assert output.shape == (batch_size, 5700)
     assert not torch.isnan(output).any()
@@ -56,7 +56,7 @@ def test_chess_convnet_creation():
     # Test forward pass with standard input shape (batch, height, width, channels)
     batch_size = 8
     x = torch.randn(batch_size, 8, 8, 20)
-    output = model(x)
+    output = model.inference(x)
 
     assert output.shape == (batch_size, 5700)
     assert not torch.isnan(output).any()
@@ -70,17 +70,17 @@ def test_chess_convnet_input_shapes():
 
     # Test batch input: (batch, height, width, channels)
     x1 = torch.randn(4, 8, 8, 20)
-    output1 = model(x1)
+    output1 = model.inference(x1)
     assert output1.shape == (4, 5700)
 
     # Test single input: (height, width, channels)
     x2 = torch.randn(8, 8, 20)
-    output2 = model(x2)
+    output2 = model.inference(x2)
     assert output2.shape == (1, 5700)
 
     # Test already permuted input: (batch, channels, height, width)
     x3 = torch.randn(4, 20, 8, 8)
-    output3 = model(x3)
+    output3 = model.inference(x3)
     assert output3.shape == (4, 5700)
 
 
@@ -95,8 +95,8 @@ def test_model_reproducibility():
     x = torch.randn(4, 69)
 
     # Models should be identical
-    output1 = model1(x)
-    output2 = model2(x)
+    output1 = model1.inference(x)
+    output2 = model2.inference(x)
 
     assert torch.allclose(output1, output2, atol=1e-6)
 
@@ -112,7 +112,7 @@ def test_different_configurations():
     for config in configs:
         model = ChessResNet(**config)
         x = torch.randn(2, 69)
-        output = model(x)
+        output = model.inference(x)
         assert output.shape == (2, 5700)
 
     conv_configs = [
@@ -124,5 +124,5 @@ def test_different_configurations():
     for config in conv_configs:
         model = ChessConvNet(**config)
         x = torch.randn(2, 8, 8, 20)
-        output = model(x)
+        output = model.inference(x)
         assert output.shape == (2, 5700)

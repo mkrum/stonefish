@@ -15,6 +15,7 @@ import stonefish.model
 import stonefish.rep
 import stonefish.resnet
 import stonefish.rl
+import stonefish.train
 import stonefish.train.base
 import stonefish.ttt
 from stonefish.dataset import default_collate_fn
@@ -25,6 +26,7 @@ expose_module(stonefish.model)
 expose_module(stonefish.rep)
 expose_module(stonefish.resnet)
 expose_module(stonefish.ttt)
+expose_module(stonefish.train)
 expose_module(stonefish.train.base)
 expose_module(stonefish.eval.base)
 expose_module(fastchessenv.env)

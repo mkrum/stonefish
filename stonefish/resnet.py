@@ -64,11 +64,16 @@ class ChessResNet(nn.Module):
 
         self.policy_head = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, x):
+    def forward(self, x, action):
+        """Forward pass for training - action parameter ignored for ResNet"""
         x = self.input_proj(x)
         for block in self.res_blocks:
             x = block(x)
         return self.policy_head(x)
+
+    def inference(self, x):
+        """Inference pass for move selection"""
+        return self.forward(x, None)
 
 
 class ChessConvNet(nn.Module):
@@ -103,7 +108,8 @@ class ChessConvNet(nn.Module):
         self.policy_relu = nn.ReLU(inplace=True)
         self.policy_fc = nn.Linear(32 * 8 * 8, output_dim)  # 8x8 is the board size
 
-    def forward(self, x):
+    def forward(self, x, action):
+        """Forward pass for training - action parameter ignored for ResNet"""
         # Handle different input shapes
         # Expected: [batch_size, 8, 8, 20] -> [batch_size, 20, 8, 8]
         if len(x.shape) == 4 and x.shape[3] == self.input_channels:
@@ -126,3 +132,7 @@ class ChessConvNet(nn.Module):
         policy = self.policy_fc(policy)
 
         return policy
+
+    def inference(self, x):
+        """Inference pass for move selection"""
+        return self.forward(x, None)
