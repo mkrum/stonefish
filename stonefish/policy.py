@@ -78,9 +78,9 @@ class ModelChessPolicy:
 
         # Map back to moves using stored move map
         move_probs = {}
-        for i, (move_idx, _) in enumerate(self.logits._move_map):
+        for i, (legal_move_idx, _) in enumerate(self.logits._move_map):
             if i < len(legal_probs):
-                move_probs[legal_moves[move_idx]] = legal_probs[i].item()
+                move_probs[legal_moves[legal_move_idx]] = legal_probs[i].item()
         return move_probs
 
     def sample(self, board: chess.Board, temperature: float = 1.0) -> chess.Move:
@@ -90,14 +90,15 @@ class ModelChessPolicy:
             return None
 
         # Apply temperature and get probabilities
-        temp_logits = self.logits.apply_temperature(temperature)
-        legal_logits = FastChessLogits(temp_logits).filter_legal_moves(board)
-        legal_probs = torch.nn.functional.softmax(legal_logits, dim=0)
+        legal_logits = self.logits.filter_legal_moves(
+            board
+        )  # Use original logits object
+        legal_probs = torch.nn.functional.softmax(legal_logits / temperature, dim=0)
 
         # Sample from distribution
         idx = Categorical(legal_probs).sample().item()
-        move_idx, _ = self.logits._move_map[idx]
-        return legal_moves[move_idx]
+        legal_move_idx, _ = self.logits._move_map[idx]
+        return legal_moves[legal_move_idx]
 
     def best_move(self, board: chess.Board) -> chess.Move:
         """Return highest probability legal move"""
@@ -109,8 +110,8 @@ class ModelChessPolicy:
         legal_logits = self.logits.filter_legal_moves(board)
         best_idx = legal_logits.argmax().item()
 
-        move_idx, _ = self.logits._move_map[best_idx]
-        return legal_moves[move_idx]
+        legal_move_idx, _ = self.logits._move_map[best_idx]
+        return legal_moves[legal_move_idx]
 
 
 @dataclass

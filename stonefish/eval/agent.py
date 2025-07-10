@@ -33,6 +33,14 @@ def play_game(
                 move_count += 1
             else:
                 # Invalid move = failing agent loses
+                agent_name = (
+                    getattr(white_agent, "name", "white")
+                    if board.turn == chess.WHITE
+                    else getattr(black_agent, "name", "black")
+                )
+                print(
+                    f"DEBUG: Agent {agent_name} made invalid move: {move} (legal moves: {len(list(board.legal_moves))})"
+                )
                 result = "0-1" if board.turn == chess.WHITE else "1-0"
                 break
         except (
@@ -42,8 +50,11 @@ def play_game(
             AttributeError,
             KeyError,
             IndexError,
-        ):
+        ) as e:
             # Agent crash = failing agent loses
+            print(
+                f"DEBUG: Agent {getattr(white_agent, 'name', 'white') if board.turn == chess.WHITE else getattr(black_agent, 'name', 'black')} crashed: {type(e).__name__}: {e}"
+            )
             result = "0-1" if board.turn == chess.WHITE else "1-0"
             break
     else:
