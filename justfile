@@ -10,6 +10,9 @@ build-gpu:
 test:
 	docker run -v $PWD:/stonefish {{IMAGE_NAME}}:cpu pytest -s
 
+eval *args:
+	docker run --rm -v "$PWD:/workspace" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.eval {{args}}
+
 # Add dependency with Poetry
 add package:
 	poetry add {{package}}

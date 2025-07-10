@@ -12,6 +12,7 @@ import stonefish.dataset
 import stonefish.env
 import stonefish.eval.base
 import stonefish.model
+import stonefish.policy
 import stonefish.rep
 import stonefish.resnet
 import stonefish.rl
@@ -23,6 +24,7 @@ from stonefish.dataset import default_collate_fn
 expose_module(optim)
 expose_module(stonefish.dataset)
 expose_module(stonefish.model)
+expose_module(stonefish.policy)
 expose_module(stonefish.rep)
 expose_module(stonefish.resnet)
 expose_module(stonefish.ttt)

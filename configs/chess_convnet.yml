@@ -30,3 +30,9 @@ model: !ChessConvNet()
 
 opt: !Adam()
     lr: !!float 1e-4
+
+# Agent configuration for evaluation
+agent: !ModelChessAgent()
+  model_type: conv  # Use Lczero board representation for ConvNet
+  temperature: 1.0
+  sample: true
