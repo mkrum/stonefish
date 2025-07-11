@@ -85,6 +85,7 @@ class PreTrainContext:
     train_fn: Any
     train_dl: Any
     test_dl: Any
+    agent_eval_fn: Any
     epochs: int = 1000
     eval_freq: int = 5000
     gradient_clip: float = 1.0
@@ -112,6 +113,11 @@ class PreTrainContext:
             out = self.eval_fn(model, self.test_dl, self.train_fn)
             logger.log_info(ValidationInfo(epoch, batch_idx, out))
             logger.checkpoint(epoch, batch_idx, model)
+
+            # Agent evaluation at end of epoch
+            agent_results = self.agent_eval_fn(model, epoch)
+            for result in agent_results:
+                logger.log_info(result)
 
 
 @dataclass
@@ -195,6 +201,11 @@ class DistributedPreTrainContext(PreTrainContext):
                 out = self.eval_fn(model, self.test_dl, self.train_fn)
                 logger.log_info(ValidationInfo(epoch, batch_idx, out))
                 logger.checkpoint(epoch, batch_idx, model)
+
+                # Agent evaluation at end of epoch
+                agent_results = self.agent_eval_fn(model, epoch)
+                for result in agent_results:
+                    logger.log_info(result)
 
             if is_distributed:
                 dist.barrier()

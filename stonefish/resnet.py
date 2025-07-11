@@ -5,7 +5,29 @@ This module contains ResNet-style models adapted from new_repo, integrated
 with stonefish's yamlargs configuration system.
 """
 
+import random
+
 import torch.nn as nn
+from fastchessenv import CBoard, CMove
+
+
+class TempOutputRep:
+
+    def from_tensor(self, max_value) -> CMove:
+        possible_move = CMove.from_int(max_value)
+        try:
+            possible_move.to_str()
+        except Exception:
+            move_value = int(5700 * random.random())
+            return self.from_tensor(move_value)
+
+        return possible_move
+
+
+class TempInputRep:
+
+    def from_tensor(self, board_array) -> CMove:
+        return CBoard.from_array(board_array).to_board()
 
 
 class ResBlock(nn.Module):
@@ -51,6 +73,10 @@ class ChessResNet(nn.Module):
 
     def __init__(self, input_dim=69, hidden_dim=4096, num_blocks=8, output_dim=5700):
         super(ChessResNet, self).__init__()
+        # Patch
+        self.output_rep = TempOutputRep()
+        self.input_rep = TempInputRep()
+
         self.hidden_dim = hidden_dim
         self.input_dim = input_dim
         self.num_blocks = num_blocks
@@ -83,6 +109,11 @@ class ChessConvNet(nn.Module):
         self, input_channels=20, num_filters=256, num_blocks=8, output_dim=5700
     ):
         super(ChessConvNet, self).__init__()
+
+        # Patch
+        self.output_rep = TempOutputRep()
+        self.input_rep = TempInputRep()
+
         self.input_channels = input_channels
         self.num_filters = num_filters
         self.num_blocks = num_blocks

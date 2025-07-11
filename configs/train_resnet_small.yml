@@ -1,0 +1,45 @@
+pretrain_context: !PreTrainContext()
+    epochs: 10
+    eval_freq: 500
+    gradient_clip: 1.0
+
+    train_fn: !train_step
+    eval_fn: !eval_model
+
+    agent_eval_fn: !training_agent_eval()
+        agent_config: !ModelChessAgent
+            temperature: 1.0
+            sample: true
+        games_vs_random: 5
+        games_vs_stockfish: 5
+        stockfish_depth: 1
+
+    train_dl: !DataLoader()
+        dataset: !HuggingFaceChessDataset()
+            split: train
+            sample_size: 1000000
+        batch_size: 64
+        shuffle: True
+        drop_last: True
+        collate_fn: null
+
+    test_dl: !DataLoader()
+        dataset: !HuggingFaceChessDataset()
+            split: test
+            sample_size: 1000
+        batch_size: 64
+        shuffle: True
+        collate_fn: null
+
+model: !ChessResNet()
+    input_dim: 69
+    hidden_dim: 512
+    num_blocks: 4
+    output_dim: 5700
+
+agent: !ModelChessAgent()
+    temperature: 1.0
+    sample: true
+
+opt: !Adam()
+    lr: !!float 1e-3

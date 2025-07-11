@@ -11,8 +11,7 @@ test:
 	docker run -v $PWD:/stonefish {{IMAGE_NAME}}:cpu pytest -s
 
 eval *args:
-	docker run --rm -v "$PWD:/workspace" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.eval {{args}}
+	docker run --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.eval {{args}}
 
-# Add dependency with Poetry
-add package:
-	poetry add {{package}}
+local-train *args:
+	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.train {{args}}

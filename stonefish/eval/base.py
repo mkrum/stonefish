@@ -70,7 +70,7 @@ class ChessEvalContext:
 def print_example(model, states, actions, infer):
     for s, a, i in list(zip(states, actions, infer, strict=False))[:16]:
         example = s[s != -1]
-        board_str = model.input_rep.from_tensor(example).to_str()
+        board_str = model.input_rep.from_tensor(example).fen()
         pred_str = model.output_rep.from_tensor(i).to_str()
         label_str = model.output_rep.from_tensor(a).to_str()
         print(f"{board_str} {pred_str} {label_str}")
@@ -85,15 +85,12 @@ def eval_model(model, datal, train_fn, max_batch=20):
     for batch_idx, (s, a) in enumerate(datal):
         model.eval()
 
-        infer = model.inference(s, a.shape[1] - 1)
+        with torch.no_grad():
+            infer = model.inference(s).argmax(dim=-1)
 
-        for i, inference in enumerate(infer):
-            pred_str = model.output_rep.from_tensor(inference).to_str()
-            label_str = model.output_rep.from_tensor(a[i]).to_str()
-
-            total += 1.0
-            if pred_str == label_str:
-                correct += 1.0
+        correct += (infer == a).sum()
+        # Assuming this is batch dim? Might need to change
+        total += s.shape[0]
 
         with torch.no_grad():
             loss = train_fn(model, s, a)

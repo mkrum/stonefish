@@ -36,7 +36,7 @@ if __name__ == "__main__":
         # Create a dummy logger for non-main processes
         logger = LogWriter(args.log_path, log_proc=False)
 
-    model = config["model"](device).to(device)
+    model = config["model"]().to(device)
     opt = config["opt"](model.parameters())
 
     ctx = config["pretrain_context"]()

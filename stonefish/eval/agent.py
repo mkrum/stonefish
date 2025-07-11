@@ -152,3 +152,34 @@ def eval_agent_vs_stockfish(
     return evaluate_agent_vs_stockfish(
         agent, num_games=max_batch, stockfish_depth=stockfish_depth
     )
+
+
+def training_agent_eval(
+    agent_config,
+    games_vs_random: int = 10,
+    games_vs_stockfish: int = 10,
+    stockfish_depth: int = 1,
+):
+    """Creates a training-compatible agent evaluation function"""
+
+    def eval_fn(model, epoch):
+        # Create agent from model using config
+        agent = agent_config(model=model)
+
+        results = []
+
+        # Evaluate vs random
+        if games_vs_random > 0:
+            random_results = evaluate_agent_vs_random(agent, num_games=games_vs_random)
+            results.extend(random_results)
+
+        # Evaluate vs stockfish
+        if games_vs_stockfish > 0:
+            stockfish_results = evaluate_agent_vs_stockfish(
+                agent, num_games=games_vs_stockfish, stockfish_depth=stockfish_depth
+            )
+            results.extend(stockfish_results)
+
+        return results
+
+    return eval_fn

@@ -10,6 +10,7 @@ from yamlargs import expose_module, make_lazy_constructor
 
 import stonefish.dataset
 import stonefish.env
+import stonefish.eval.agent
 import stonefish.eval.base
 import stonefish.model
 import stonefish.policy
@@ -31,6 +32,7 @@ expose_module(stonefish.ttt)
 expose_module(stonefish.train)
 expose_module(stonefish.train.base)
 expose_module(stonefish.eval.base)
+expose_module(stonefish.eval.agent)
 expose_module(fastchessenv.env)
 expose_module(stonefish.env)
 expose_module(stonefish.rl)
