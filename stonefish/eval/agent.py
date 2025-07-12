@@ -1,5 +1,8 @@
 """
-Agent evaluation by playing games against random opponent.
+Agent Evaluations
+
+Evaluations that focus on the entire "system", building on top things that map
+from a chess.Board to a chess.Move (ChessAgent).
 """
 
 import io
@@ -32,11 +35,12 @@ def play_game(
         try:
             move = agent(board)
             if move and move in board.legal_moves:
+                # Move is valid
                 board.push(move)
                 node = node.add_variation(move)
                 move_count += 1
             else:
-                # Invalid move = failing agent loses
+                # Catch for invalid moves, failing agent loses
                 agent_name = (
                     getattr(white_agent, "name", "white")
                     if board.turn == chess.WHITE
@@ -55,7 +59,7 @@ def play_game(
             KeyError,
             IndexError,
         ) as e:
-            # Agent crash = failing agent loses
+            # If the agent crashes or throws an error, we just say it lost
             print(
                 f"DEBUG: Agent {getattr(white_agent, 'name', 'white') if board.turn == chess.WHITE else getattr(black_agent, 'name', 'black')} crashed: {type(e).__name__}: {e}"
             )
@@ -64,47 +68,9 @@ def play_game(
     else:
         # Normal game end or max moves reached
         result = board.result() if board.is_game_over() else "1/2-1/2"
+
     game.headers["Result"] = result
-
     return result, str(game)
-
-
-def evaluate_agent_vs_random(agent: ChessAgent, num_games: int = 100) -> list[TestInfo]:
-    """Evaluate agent against random opponent"""
-    random_agent = RandomAgent()
-    return evaluate_agents(
-        agent, random_agent, num_games=num_games, opponent_name="random"
-    )
-
-
-def evaluate_agent_vs_stockfish(
-    agent: ChessAgent, num_games: int = 100, stockfish_depth: int = 1
-) -> list[TestInfo]:
-    """Evaluate agent against Stockfish at configurable difficulty"""
-    stockfish_agent = StockfishAgent(depth=stockfish_depth)
-    return evaluate_agents(
-        agent, stockfish_agent, num_games=num_games, opponent_name="stockfish"
-    )
-
-
-def eval_agent_vs_random(model, dataloader, train_fn, max_batch=20) -> list[TestInfo]:
-    """Training-compatible evaluation function against random opponent"""
-    from stonefish.policy import ModelChessAgent
-
-    agent = ModelChessAgent(model, model_type="standard")
-    return evaluate_agent_vs_random(agent, num_games=max_batch)
-
-
-def eval_agent_vs_stockfish(
-    model, dataloader, train_fn, max_batch=20, stockfish_depth=1
-) -> list[TestInfo]:
-    """Training-compatible evaluation function against Stockfish"""
-    from stonefish.policy import ModelChessAgent
-
-    agent = ModelChessAgent(model, model_type="standard")
-    return evaluate_agent_vs_stockfish(
-        agent, num_games=max_batch, stockfish_depth=stockfish_depth
-    )
 
 
 def get_pgns_between_agents(
@@ -204,13 +170,10 @@ def training_agent_eval(
             random_games = []
             for pgn_str in random_pgns:
                 game = chess.pgn.read_game(io.StringIO(pgn_str))
-                if game:
-                    random_games.append(game)
+                random_games.append(game)
 
-            # Create wandb HTML viewer for random games (one game only)
-            if random_games:
-                html_content = _create_pgn_html(str(random_games[0]))
-                wandb_metrics["eval/PGNAgainstRandom"] = wandb.Html(html_content)
+            html_content = _create_pgn_html(str(random_games[0]))
+            wandb_metrics["eval/PGNAgainstRandom"] = wandb.Html(html_content)
 
             # Get sample games vs stockfish
             stockfish_agent = StockfishAgent(depth=stockfish_depth)
@@ -222,13 +185,11 @@ def training_agent_eval(
             stockfish_games = []
             for pgn_str in stockfish_pgns:
                 game = chess.pgn.read_game(io.StringIO(pgn_str))
-                if game:
-                    stockfish_games.append(game)
+                stockfish_games.append(game)
 
             # Create wandb HTML viewer for stockfish games (one game only)
-            if stockfish_games:
-                html_content = _create_pgn_html(str(stockfish_games[0]))
-                wandb_metrics["eval/PGNAgainstStockfishOne"] = wandb.Html(html_content)
+            html_content = _create_pgn_html(str(stockfish_games[0]))
+            wandb_metrics["eval/PGNAgainstStockfishOne"] = wandb.Html(html_content)
 
         return wandb_metrics
 

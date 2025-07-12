@@ -9,6 +9,7 @@ import torch
 from mllg import LogWriter
 from torch.utils.data import DataLoader, TensorDataset
 
+import wandb
 from stonefish.eval.tensor import eval_model_tensors
 from stonefish.resnet import ChessResNet
 from stonefish.train import PreTrainContext, train_step
@@ -16,6 +17,8 @@ from stonefish.train import PreTrainContext, train_step
 
 def test_train_small_resnet():
     """Test training a small ResNet model on synthetic data"""
+    # Disable wandb for testing
+    wandb.init(mode="disabled")
     # Create synthetic chess-like data
     num_samples = 100
     input_dim = 69  # Standard chess board representation
@@ -45,12 +48,17 @@ def test_train_small_resnet():
     # Create optimizer
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
+    # Create dummy agent eval function
+    def dummy_agent_eval(model, epoch):
+        return {"test_metric": 0.5}
+
     # Create training context
     ctx = PreTrainContext(
         eval_fn=eval_model_tensors,
         train_fn=train_step,
         train_dl=train_loader,
         test_dl=test_loader,
+        agent_eval_fn=dummy_agent_eval,
         epochs=2,  # Just 2 epochs
         eval_freq=2,  # Evaluate every 2 batches
     )
