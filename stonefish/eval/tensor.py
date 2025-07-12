@@ -81,6 +81,6 @@ def eval_model_tensors(model, dataloader, train_fn, max_batch=20):
     avg_acc = total_acc / batch_count if batch_count > 0 else 0.0
 
     return [
-        TestInfo("loss", avg_loss),
-        TestInfo("ACC", avg_acc),
+        TestInfo("loss", float(avg_loss)),
+        TestInfo("ACC", float(avg_acc)),
     ]

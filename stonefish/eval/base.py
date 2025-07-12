@@ -104,7 +104,7 @@ def eval_model(model, datal, train_fn, max_batch=20):
 
     acc = correct / total
     m_loss = np.mean(losses)
-    return [TestInfo("ACC", acc), TestInfo("loss", m_loss)]
+    return [TestInfo("ACC", float(acc)), TestInfo("loss", float(m_loss))]
 
 
 def seq_eval_model(model, datal, train_fn, max_batch=20):
@@ -139,7 +139,7 @@ def seq_eval_model(model, datal, train_fn, max_batch=20):
 
     acc = correct / total
     m_loss = np.mean(losses)
-    return [TestInfo("ACC", acc.item()), TestInfo("loss", m_loss)]
+    return [TestInfo("ACC", acc.item()), TestInfo("loss", float(m_loss))]
 
 
 def random_action(masks):

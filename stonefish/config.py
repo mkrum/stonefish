@@ -22,20 +22,24 @@ import stonefish.train.base
 import stonefish.ttt
 from stonefish.dataset import default_collate_fn
 
-expose_module(optim)
-expose_module(stonefish.dataset)
-expose_module(stonefish.model)
-expose_module(stonefish.policy)
-expose_module(stonefish.rep)
-expose_module(stonefish.resnet)
-expose_module(stonefish.ttt)
-expose_module(stonefish.train)
-expose_module(stonefish.train.base)
-expose_module(stonefish.eval.base)
-expose_module(stonefish.eval.agent)
-expose_module(fastchessenv.env)
-expose_module(stonefish.env)
-expose_module(stonefish.rl)
+
+def expose_modules():
+    expose_module(optim)
+    expose_module(stonefish.dataset)
+    expose_module(stonefish.model)
+    expose_module(stonefish.policy)
+    expose_module(stonefish.rep)
+    expose_module(stonefish.resnet)
+    expose_module(stonefish.ttt)
+    expose_module(stonefish.train)
+    expose_module(stonefish.train.base)
+    expose_module(stonefish.eval.base)
+    expose_module(stonefish.eval.agent)
+    expose_module(fastchessenv.env)
+    expose_module(stonefish.env)
+    expose_module(stonefish.rl)
+    make_lazy_constructor(nn.Linear)
+    make_lazy_constructor(DataLoader, {"collate_fn": default_collate_fn})
 
 
 def load_config_and_create_parser():
@@ -67,7 +71,3 @@ def load_model(config, load=None):
         model.load_state_dict(torch.load(load))
 
     return model
-
-
-make_lazy_constructor(nn.Linear)
-make_lazy_constructor(DataLoader, {"collate_fn": default_collate_fn})

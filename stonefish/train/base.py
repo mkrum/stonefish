@@ -162,7 +162,7 @@ class DistributedPreTrainContext(PreTrainContext):
         # Initial evaluation
         if is_main_process:
             out = self.eval_fn(model, self.test_dl, self.train_fn)
-            logger.log_info(ValidationInfo(0, 0, out))
+            logger.log_info(out)
 
         if is_distributed:
             dist.barrier()

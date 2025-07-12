@@ -4,7 +4,11 @@ import torch
 from mllg import LogWriter
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
 
+import stonefish.config
+
 if __name__ == "__main__":
+
+    stonefish.config.expose_modules()
 
     config, parser = load_config_and_create_parser()
     parser.add_argument("log_path")
