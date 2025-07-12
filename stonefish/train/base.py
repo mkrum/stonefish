@@ -5,11 +5,11 @@ from typing import Any
 import torch
 import torch.distributed as dist
 import torch.nn.functional as functional
-import wandb
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 
+import wandb
 from stonefish.mask import MoveMask
 
 
@@ -192,13 +192,24 @@ class PreTrainContext:
                 # Agent evaluation at end of epoch
                 agent_results = self.agent_eval_fn(model, epoch)
 
-                # Log metrics to file
+                # Separate regular metrics from HTML content
+                regular_metrics = {}
+                html_content = {}
+
                 for key, value in agent_results.items():
-                    if key != "eval/Games":  # Skip HTML content
+                    if key.startswith("eval/PGN"):
+                        html_content[key] = value
+                    else:
+                        regular_metrics[key] = value
                         logger.log_info(TestInfo(key, value))
 
                 # Log to wandb (using same step as validation)
-                wandb.log(agent_results, step=epoch * len(self.train_dl) + batch_idx)
+                if regular_metrics:
+                    wandb.log(
+                        regular_metrics, step=epoch * len(self.train_dl) + batch_idx
+                    )
+                if html_content:
+                    wandb.log(html_content, step=epoch * len(self.train_dl) + batch_idx)
 
             if is_distributed:
                 dist.barrier()

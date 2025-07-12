@@ -8,8 +8,9 @@ import chess
 import chess.pgn
 from mllg import TestInfo
 
+import wandb
 from stonefish.env import RandomAgent, StockfishAgent
-from stonefish.eval.base import create_game_log_for_wandb
+from stonefish.eval.base import _create_pgn_html
 from stonefish.types import ChessAgent
 
 
@@ -193,32 +194,41 @@ def training_agent_eval(
 
         # Generate PGNs for visualization
         if pgn_games > 0:
-            all_pgns = []
-
             # Get sample games vs random
             random_agent = RandomAgent()
             random_pgns = get_pgns_between_agents(
                 agent, random_agent, num_games=pgn_games
             )
-            all_pgns.extend(random_pgns)
+
+            # Convert random PGN strings to game objects
+            random_games = []
+            for pgn_str in random_pgns:
+                game = chess.pgn.read_game(io.StringIO(pgn_str))
+                if game:
+                    random_games.append(game)
+
+            # Create wandb HTML viewer for random games (one game only)
+            if random_games:
+                html_content = _create_pgn_html(str(random_games[0]))
+                wandb_metrics["eval/PGNAgainstRandom"] = wandb.Html(html_content)
 
             # Get sample games vs stockfish
             stockfish_agent = StockfishAgent(depth=stockfish_depth)
             stockfish_pgns = get_pgns_between_agents(
                 agent, stockfish_agent, num_games=pgn_games
             )
-            all_pgns.extend(stockfish_pgns)
 
-            # Convert PGN strings to game objects
-            games = []
-            for pgn_str in all_pgns:
+            # Convert stockfish PGN strings to game objects
+            stockfish_games = []
+            for pgn_str in stockfish_pgns:
                 game = chess.pgn.read_game(io.StringIO(pgn_str))
                 if game:
-                    games.append(game)
+                    stockfish_games.append(game)
 
-            # Create wandb HTML viewer
-            game_log = create_game_log_for_wandb(games)
-            wandb_metrics.update(game_log)
+            # Create wandb HTML viewer for stockfish games (one game only)
+            if stockfish_games:
+                html_content = _create_pgn_html(str(stockfish_games[0]))
+                wandb_metrics["eval/PGNAgainstStockfishOne"] = wandb.Html(html_content)
 
         return wandb_metrics
 
