@@ -1,6 +1,7 @@
 import os
 
 import torch
+import wandb
 from mllg import LogWriter
 from yamlargs.parser import load_config_and_create_parser, parse_args_into_config
 
@@ -29,6 +30,9 @@ if __name__ == "__main__":
     # Only create logger on main process for distributed training
     is_main_process = local_rank == 0
     if is_main_process:
+        # Initialize wandb
+        wandb.init(project="stonefish")
+
         logger = LogWriter(args.log_path)
         config_data = config.to_json()
         config_data["type"] = "config"

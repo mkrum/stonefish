@@ -5,7 +5,8 @@ from typing import Any
 import torch
 import torch.distributed as dist
 import torch.nn.functional as functional
-from mllg import TrainInfo, ValidationInfo
+import wandb
+from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 
@@ -17,7 +18,13 @@ def train_step(model, state, output):
 
     probs = model(state, output)
     loss = functional.cross_entropy(probs, output.to(probs.device).flatten())
-    return loss
+
+    # Calculate accuracy
+    predictions = probs.argmax(dim=-1)
+    targets = output.to(probs.device).flatten()
+    accuracy = (predictions == targets).float().mean()
+
+    return loss, accuracy
 
 
 def seq_train_step(model, state, output):
@@ -91,41 +98,7 @@ class PreTrainContext:
     gradient_clip: float = 1.0
 
     def __call__(self, logger, model, opt):
-        out = self.eval_fn(model, self.test_dl, self.train_fn)
-        logger.log_info(ValidationInfo(0, 0, out))
-
-        for epoch in range(self.epochs):
-
-            for batch_idx, (state, output) in enumerate(self.train_dl):
-                opt.zero_grad()
-                loss = self.train_fn(model, state, output)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
-                opt.step()
-
-                logger.log_info(TrainInfo(epoch, batch_idx, loss.item()))
-
-                if batch_idx % self.eval_freq == 0 and batch_idx > 0:
-                    out = self.eval_fn(model, self.test_dl, self.train_fn)
-                    logger.log_info(ValidationInfo(epoch, batch_idx, out))
-                    logger.checkpoint(epoch, batch_idx, model)
-
-            out = self.eval_fn(model, self.test_dl, self.train_fn)
-            logger.log_info(ValidationInfo(epoch, batch_idx, out))
-            logger.checkpoint(epoch, batch_idx, model)
-
-            # Agent evaluation at end of epoch
-            agent_results = self.agent_eval_fn(model, epoch)
-            for result in agent_results:
-                logger.log_info(result)
-
-
-@dataclass
-class DistributedPreTrainContext(PreTrainContext):
-    """Extended PreTrainContext with distributed training support."""
-
-    def __call__(self, logger, model, opt):
-        # Setup distributed training
+        # Setup distributed training if available
         local_rank, world_size, is_distributed = setup_distributed()
         is_main_process = local_rank == 0
 
@@ -137,7 +110,6 @@ class DistributedPreTrainContext(PreTrainContext):
 
         # Create distributed samplers if needed
         train_sampler = None
-        test_sampler = None
         if is_distributed and hasattr(self.train_dl.dataset, "__len__"):
             train_sampler = DistributedSampler(
                 self.train_dl.dataset,
@@ -145,7 +117,6 @@ class DistributedPreTrainContext(PreTrainContext):
                 rank=local_rank,
                 shuffle=True,
             )
-            # Update dataloader with sampler
             self.train_dl.sampler = train_sampler
             self.train_dl.shuffle = False
 
@@ -162,7 +133,7 @@ class DistributedPreTrainContext(PreTrainContext):
         # Initial evaluation
         if is_main_process:
             out = self.eval_fn(model, self.test_dl, self.train_fn)
-            logger.log_info(out)
+            logger.log_info(ValidationInfo(0, 0, out))
 
         if is_distributed:
             dist.barrier()
@@ -174,25 +145,35 @@ class DistributedPreTrainContext(PreTrainContext):
 
             for batch_idx, (state, output) in enumerate(self.train_dl):
                 opt.zero_grad()
-
-                loss = self.train_fn(model, state, output)
+                loss, accuracy = self.train_fn(model, state, output)
                 loss.backward()
-
-                # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
-
                 opt.step()
 
                 # Only log from main process
                 if is_main_process:
                     logger.log_info(TrainInfo(epoch, batch_idx, loss.item()))
 
+                    # Log training metrics to wandb
+                    wandb.log(
+                        {"train_loss": loss.item(), "train_acc": accuracy.item()},
+                        step=epoch * len(self.train_dl) + batch_idx,
+                    )
+
                     if batch_idx % self.eval_freq == 0 and batch_idx > 0:
                         out = self.eval_fn(model, self.test_dl, self.train_fn)
                         logger.log_info(ValidationInfo(epoch, batch_idx, out))
                         logger.checkpoint(epoch, batch_idx, model)
 
-                # Synchronize processes
+                        # Log validation metrics to wandb
+                        val_metrics = {}
+                        for test_info in out:
+                            val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
+                        wandb.log(
+                            val_metrics, step=epoch * len(self.train_dl) + batch_idx
+                        )
+
+                # Synchronize processes if distributed
                 if is_distributed and batch_idx % self.eval_freq == 0:
                     dist.barrier()
 
@@ -202,13 +183,26 @@ class DistributedPreTrainContext(PreTrainContext):
                 logger.log_info(ValidationInfo(epoch, batch_idx, out))
                 logger.checkpoint(epoch, batch_idx, model)
 
+                # Log validation metrics to wandb at end of epoch
+                val_metrics = {}
+                for test_info in out:
+                    val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
+                wandb.log(val_metrics, step=epoch * len(self.train_dl) + batch_idx)
+
                 # Agent evaluation at end of epoch
                 agent_results = self.agent_eval_fn(model, epoch)
-                for result in agent_results:
-                    logger.log_info(result)
+
+                # Log metrics to file
+                for key, value in agent_results.items():
+                    if key != "eval/Games":  # Skip HTML content
+                        logger.log_info(TestInfo(key, value))
+
+                # Log to wandb (using same step as validation)
+                wandb.log(agent_results, step=epoch * len(self.train_dl) + batch_idx)
 
             if is_distributed:
                 dist.barrier()
 
-        # Cleanup
-        cleanup_distributed()
+        # Cleanup distributed training
+        if is_distributed:
+            cleanup_distributed()

@@ -2,11 +2,14 @@
 Agent evaluation by playing games against random opponent.
 """
 
+import io
+
 import chess
 import chess.pgn
 from mllg import TestInfo
 
 from stonefish.env import RandomAgent, StockfishAgent
+from stonefish.eval.base import create_game_log_for_wandb
 from stonefish.types import ChessAgent
 
 
@@ -68,34 +71,9 @@ def play_game(
 def evaluate_agent_vs_random(agent: ChessAgent, num_games: int = 100) -> list[TestInfo]:
     """Evaluate agent against random opponent"""
     random_agent = RandomAgent()
-    wins = losses = draws = 0
-
-    for i in range(num_games):
-        if i < num_games // 2:
-            # Agent as white
-            result, _ = play_game(agent, random_agent)
-            if result == "1-0":
-                wins += 1
-            elif result == "0-1":
-                losses += 1
-            else:
-                draws += 1
-        else:
-            # Agent as black
-            result, _ = play_game(random_agent, agent)
-            if result == "0-1":
-                wins += 1
-            elif result == "1-0":
-                losses += 1
-            else:
-                draws += 1
-
-    return [
-        TestInfo("agent_win_rate", wins / num_games),
-        TestInfo("agent_wins", wins),
-        TestInfo("agent_losses", losses),
-        TestInfo("agent_draws", draws),
-    ]
+    return evaluate_agents(
+        agent, random_agent, num_games=num_games, opponent_name="random"
+    )
 
 
 def evaluate_agent_vs_stockfish(
@@ -103,35 +81,9 @@ def evaluate_agent_vs_stockfish(
 ) -> list[TestInfo]:
     """Evaluate agent against Stockfish at configurable difficulty"""
     stockfish_agent = StockfishAgent(depth=stockfish_depth)
-    wins = losses = draws = 0
-
-    for i in range(num_games):
-        if i < num_games // 2:
-            # Agent as white
-            result, _ = play_game(agent, stockfish_agent)
-            if result == "1-0":
-                wins += 1
-            elif result == "0-1":
-                losses += 1
-            else:
-                draws += 1
-        else:
-            # Agent as black
-            result, _ = play_game(stockfish_agent, agent)
-            if result == "0-1":
-                wins += 1
-            elif result == "1-0":
-                losses += 1
-            else:
-                draws += 1
-
-    return [
-        TestInfo("stockfish_win_rate", wins / num_games),
-        TestInfo("stockfish_wins", wins),
-        TestInfo("stockfish_losses", losses),
-        TestInfo("stockfish_draws", draws),
-        TestInfo("stockfish_depth", stockfish_depth),
-    ]
+    return evaluate_agents(
+        agent, stockfish_agent, num_games=num_games, opponent_name="stockfish"
+    )
 
 
 def eval_agent_vs_random(model, dataloader, train_fn, max_batch=20) -> list[TestInfo]:
@@ -154,11 +106,60 @@ def eval_agent_vs_stockfish(
     )
 
 
+def get_pgns_between_agents(
+    white_agent: ChessAgent, black_agent: ChessAgent, num_games: int = 2
+) -> list[str]:
+    """Get PGN strings from games between two agents"""
+    pgns = []
+
+    for _ in range(num_games):
+        _, pgn = play_game(white_agent, black_agent)
+        pgns.append(pgn)
+
+    return pgns
+
+
+def evaluate_agents(
+    agent1: ChessAgent,
+    agent2: ChessAgent,
+    num_games: int = 10,
+    opponent_name: str = "opponent",
+) -> list[TestInfo]:
+    """Evaluate agent1 vs agent2, with agent1 playing both colors"""
+    wins = losses = draws = 0
+
+    for i in range(num_games):
+        if i < num_games // 2:
+            # Agent1 as white
+            result, _ = play_game(agent1, agent2)
+            if result == "1-0":
+                wins += 1
+            elif result == "0-1":
+                losses += 1
+            else:
+                draws += 1
+        else:
+            # Agent1 as black
+            result, _ = play_game(agent2, agent1)
+            if result == "0-1":
+                wins += 1
+            elif result == "1-0":
+                losses += 1
+            else:
+                draws += 1
+
+    return [
+        TestInfo(f"against_{opponent_name}_win_rate", wins / num_games),
+        TestInfo(f"against_{opponent_name}_loss_rate", losses / num_games),
+    ]
+
+
 def training_agent_eval(
     agent_config,
     games_vs_random: int = 10,
     games_vs_stockfish: int = 10,
     stockfish_depth: int = 1,
+    pgn_games: int = 2,
 ):
     """Creates a training-compatible agent evaluation function"""
 
@@ -166,20 +167,59 @@ def training_agent_eval(
         # Create agent from model using config
         agent = agent_config(model=model)
 
-        results = []
+        # Collect metrics for wandb
+        wandb_metrics = {}
 
         # Evaluate vs random
         if games_vs_random > 0:
-            random_results = evaluate_agent_vs_random(agent, num_games=games_vs_random)
-            results.extend(random_results)
+            random_agent = RandomAgent()
+            random_results = evaluate_agents(
+                agent, random_agent, num_games=games_vs_random, opponent_name="random"
+            )
+            for result in random_results:
+                wandb_metrics[result.loss_type] = result.loss
 
         # Evaluate vs stockfish
         if games_vs_stockfish > 0:
-            stockfish_results = evaluate_agent_vs_stockfish(
-                agent, num_games=games_vs_stockfish, stockfish_depth=stockfish_depth
+            stockfish_agent = StockfishAgent(depth=stockfish_depth)
+            stockfish_results = evaluate_agents(
+                agent,
+                stockfish_agent,
+                num_games=games_vs_stockfish,
+                opponent_name="stockfish",
             )
-            results.extend(stockfish_results)
+            for result in stockfish_results:
+                wandb_metrics[result.loss_type] = result.loss
 
-        return results
+        # Generate PGNs for visualization
+        if pgn_games > 0:
+            all_pgns = []
+
+            # Get sample games vs random
+            random_agent = RandomAgent()
+            random_pgns = get_pgns_between_agents(
+                agent, random_agent, num_games=pgn_games
+            )
+            all_pgns.extend(random_pgns)
+
+            # Get sample games vs stockfish
+            stockfish_agent = StockfishAgent(depth=stockfish_depth)
+            stockfish_pgns = get_pgns_between_agents(
+                agent, stockfish_agent, num_games=pgn_games
+            )
+            all_pgns.extend(stockfish_pgns)
+
+            # Convert PGN strings to game objects
+            games = []
+            for pgn_str in all_pgns:
+                game = chess.pgn.read_game(io.StringIO(pgn_str))
+                if game:
+                    games.append(game)
+
+            # Create wandb HTML viewer
+            game_log = create_game_log_for_wandb(games)
+            wandb_metrics.update(game_log)
+
+        return wandb_metrics
 
     return eval_fn

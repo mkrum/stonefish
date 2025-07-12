@@ -1,4 +1,6 @@
 
+set dotenv-load
+
 IMAGE_NAME := "stonefish"
 
 build:
@@ -14,4 +16,4 @@ eval *args:
 	docker run --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.eval {{args}}
 
 local-train *args:
-	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{IMAGE_NAME}}:cpu python -m stonefish.train {{args}}
+	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{IMAGE_NAME}}:cpu python -m stonefish.train {{args}}

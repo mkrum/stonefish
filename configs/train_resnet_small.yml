@@ -1,6 +1,6 @@
 
 pretrain_context: !PreTrainContext()
-    epochs: 10
+    epochs: 5
     eval_freq: 500
     gradient_clip: 1.0
 
@@ -18,7 +18,7 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !HuggingFaceChessDataset()
             split: train
-            sample_size: 1000000
+            sample_size: 100000
         batch_size: 64
         shuffle: True
         drop_last: True

@@ -93,7 +93,12 @@ def eval_model(model, datal, train_fn, max_batch=20):
         total += s.shape[0]
 
         with torch.no_grad():
-            loss = train_fn(model, s, a)
+            result = train_fn(model, s, a)
+            # Handle both old (loss only) and new (loss, accuracy) return formats
+            if isinstance(result, tuple):
+                loss, _ = result
+            else:
+                loss = result
 
         losses.append(loss.item())
 
@@ -128,7 +133,12 @@ def seq_eval_model(model, datal, train_fn, max_batch=20):
         total += flat_infer.shape[0]
 
         with torch.no_grad():
-            loss = train_fn(model, s, a)
+            result = train_fn(model, s, a)
+            # Handle both old (loss only) and new (loss, accuracy) return formats
+            if isinstance(result, tuple):
+                loss, _ = result
+            else:
+                loss = result
 
         losses.append(loss.item())
 
