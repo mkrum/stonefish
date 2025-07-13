@@ -7,6 +7,8 @@ import torch.distributed as dist
 import torch.nn.functional as functional
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from stonefish.mask import MoveMask
@@ -107,9 +109,44 @@ class PreTrainContext:
                 model, device_ids=[local_rank], output_device=local_rank
             )
 
-        # For now, skip distributed sampling to avoid DataLoader modification issues
-        # TODO: Implement proper distributed sampling
+        # Create distributed samplers if needed
         train_sampler = None
+        if is_distributed and hasattr(self.train_dl.dataset, "__len__"):
+            # Create distributed sampler for training data
+            train_sampler = DistributedSampler(
+                self.train_dl.dataset,
+                num_replicas=world_size,
+                rank=local_rank,
+                shuffle=True,
+            )
+            # Create new DataLoader with distributed sampler
+            self.train_dl = DataLoader(
+                dataset=self.train_dl.dataset,
+                batch_size=self.train_dl.batch_size,
+                sampler=train_sampler,
+                num_workers=getattr(self.train_dl, "num_workers", 0),
+                collate_fn=self.train_dl.collate_fn,
+                pin_memory=getattr(self.train_dl, "pin_memory", False),
+                drop_last=getattr(self.train_dl, "drop_last", False),
+            )
+
+            # Create distributed sampler for test data if available
+            if self.test_dl is not None:
+                test_sampler = DistributedSampler(
+                    self.test_dl.dataset,
+                    num_replicas=world_size,
+                    rank=local_rank,
+                    shuffle=False,
+                )
+                self.test_dl = DataLoader(
+                    dataset=self.test_dl.dataset,
+                    batch_size=self.test_dl.batch_size,
+                    sampler=test_sampler,
+                    num_workers=getattr(self.test_dl, "num_workers", 0),
+                    collate_fn=self.test_dl.collate_fn,
+                    pin_memory=getattr(self.test_dl, "pin_memory", False),
+                    drop_last=getattr(self.test_dl, "drop_last", False),
+                )
 
         # Initial evaluation
         if is_main_process:
