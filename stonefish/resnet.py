@@ -10,6 +10,8 @@ import random
 import torch.nn as nn
 from fastchessenv import CBoard, CMove
 
+from stonefish.convert import lczero_tensor_to_board
+
 
 class TempOutputRep:
 
@@ -28,6 +30,12 @@ class TempInputRep:
 
     def from_tensor(self, board_array) -> CMove:
         return CBoard.from_array(board_array).to_board()
+
+
+class TempInputBoardRep:
+
+    def from_tensor(self, board_array) -> CMove:
+        return lczero_tensor_to_board(board_array.cpu().numpy())
 
 
 class ResBlock(nn.Module):
@@ -115,7 +123,7 @@ class ChessConvNet(nn.Module):
 
         # Patch
         self.output_rep = TempOutputRep()
-        self.input_rep = TempInputRep()
+        self.input_rep = TempInputBoardRep()
 
         self.input_channels = input_channels
         self.num_filters = num_filters
@@ -164,7 +172,6 @@ class ChessConvNet(nn.Module):
         policy = self.policy_relu(policy)
         policy = policy.reshape(policy.size(0), -1)  # Flatten
         policy = self.policy_fc(policy)
-
         return policy
 
     def inference(self, x):

@@ -5,11 +5,17 @@ import chess
 import chess.engine
 import chess.pgn
 import numpy as np
-import pyspiel
 import torch
 from fastchessenv import CChessEnv
 from fastchessenv.sfa import SFArray
-from open_spiel.python.rl_environment import Environment, StepType
+
+try:
+    import pyspiel
+    from open_spiel.python.rl_environment import Environment, StepType
+
+    HAS_OPEN_SPIEL = True
+except ImportError:
+    HAS_OPEN_SPIEL = False
 
 
 @dataclass
@@ -140,6 +146,8 @@ class CChessEnvTorchTwoPlayer(CChessEnv):
 
 class TTTEnv:
     def __init__(self, n):
+        if not HAS_OPEN_SPIEL:
+            raise ImportError("open_spiel is required for TTTEnv")
         self.n = n
         self._envs = [Environment(pyspiel.load_game("tic_tac_toe")) for _ in range(n)]
 
@@ -258,6 +266,8 @@ class TTTEnvTwoPlayer(TTTEnv):
 
 class ChessSpielEnv:
     def __init__(self, n):
+        if not HAS_OPEN_SPIEL:
+            raise ImportError("open_spiel is required for ChessSpielEnv")
         self.n = n
         self._envs = [Environment(pyspiel.load_game("chess")) for _ in range(n)]
 

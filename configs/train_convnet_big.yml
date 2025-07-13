@@ -1,0 +1,52 @@
+pretrain_context: !PreTrainContext()
+    epochs: 5
+    eval_freq: 1000
+    gradient_clip: 1.0
+
+    train_fn: !train_step
+    eval_fn: !eval_model
+
+    agent_eval_fn: !training_agent_eval()
+        agent_config: !ModelChessAgent
+            model_type: conv
+            temperature: 1.0
+            sample: true
+        games_vs_random: 10
+        games_vs_stockfish: 50
+        stockfish_depth: 1
+
+    train_dl: !DataLoader()
+        dataset: !LczeroChessDataset()
+            split: train
+        batch_size: 16
+        shuffle: True
+        drop_last: True
+        collate_fn: null
+        num_workers: 1
+        pin_memory: false
+        prefetch_factor: 2
+
+    test_dl: !DataLoader()
+        dataset: !LczeroChessDataset()
+            split: test
+            sample_size: 1000
+        batch_size: 16
+        shuffle: True
+        collate_fn: null
+        num_workers: 1
+        pin_memory: false
+        prefetch_factor: 2
+
+model: !ChessConvNet()
+    input_channels: 20
+    num_filters: 128
+    num_blocks: 8
+    output_dim: 5700
+
+agent: !ModelChessAgent()
+    model_type: conv
+    temperature: 1.0
+    sample: true
+
+opt: !Adam()
+    lr: !!float 5e-4

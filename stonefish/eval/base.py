@@ -68,11 +68,16 @@ class ChessEvalContext:
 
 
 def print_example(model, states, actions, infer):
+
     # Handle DistributedDataParallel wrapper
     model_unwrapped = model.module if hasattr(model, "module") else model
-    for s, a, i in list(zip(states, actions, infer, strict=False))[:16]:
-        example = s[s != -1].cpu()  # Move to CPU for numpy conversion
-        board_str = model_unwrapped.input_rep.from_tensor(example).fen()
+
+    for idx in range(min(states.shape[0], 16)):
+        s = states[idx]
+        a = actions[idx]
+        i = infer[idx]
+
+        board_str = model_unwrapped.input_rep.from_tensor(s).fen()
         pred_str = model_unwrapped.output_rep.from_tensor(
             i.cpu()
         ).to_str()  # Move to CPU

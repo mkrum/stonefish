@@ -25,7 +25,6 @@ dependencies = [
     "optax",
     "wandb",
     "fastchessenv",
-    "open-spiel",
 ]
 
 [project.scripts]
@@ -43,6 +42,9 @@ dev = [
 test = [
     "pytest",
     "pytest-cov",
+]
+rl = [
+    "open-spiel",
 ]
 
 [tool.black]

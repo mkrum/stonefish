@@ -149,7 +149,7 @@ class PreTrainContext:
                 )
 
         # Initial evaluation
-        if is_main_process:
+        if is_main_process and self.eval_fn:
             out = self.eval_fn(model, self.test_dl, self.train_fn)
             logger.log_info(ValidationInfo(0, 0, out))
 
@@ -163,8 +163,10 @@ class PreTrainContext:
 
             for batch_idx, (state, output) in enumerate(self.train_dl):
                 opt.zero_grad()
+
                 loss, accuracy = self.train_fn(model, state, output)
                 loss.backward()
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
                 opt.step()
 
@@ -178,7 +180,11 @@ class PreTrainContext:
                         step=epoch * len(self.train_dl) + batch_idx,
                     )
 
-                    if batch_idx % self.eval_freq == 0 and batch_idx > 0:
+                    if (
+                        batch_idx % self.eval_freq == 0
+                        and batch_idx > 0
+                        and self.eval_fn
+                    ):
                         out = self.eval_fn(model, self.test_dl, self.train_fn)
                         logger.log_info(ValidationInfo(epoch, batch_idx, out))
                         logger.checkpoint(epoch, batch_idx, model)
@@ -197,15 +203,17 @@ class PreTrainContext:
 
             # End of epoch evaluation
             if is_main_process:
-                out = self.eval_fn(model, self.test_dl, self.train_fn)
-                logger.log_info(ValidationInfo(epoch, batch_idx, out))
-                logger.checkpoint(epoch, batch_idx, model)
+                if self.eval_fn is not None:
+                    out = self.eval_fn(model, self.test_dl, self.train_fn)
+                    logger.log_info(ValidationInfo(epoch, batch_idx, out))
 
-                # Log validation metrics to wandb at end of epoch
-                val_metrics = {}
-                for test_info in out:
-                    val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
-                wandb.log(val_metrics, step=epoch * len(self.train_dl) + batch_idx)
+                    # Log validation metrics to wandb at end of epoch
+                    val_metrics = {}
+                    for test_info in out:
+                        val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
+                    wandb.log(val_metrics, step=epoch * len(self.train_dl) + batch_idx)
+
+                logger.checkpoint(epoch, batch_idx, model)
 
                 # Agent evaluation at end of epoch
                 # Unwrap DistributedDataParallel before passing to agent eval

@@ -8,7 +8,7 @@ spec:
   - us-central1-a
   autoscaling:
     minNodeCount: 0
-    maxNodeCount: 2
+    maxNodeCount: 1
   management:
     autoRepair: true
     autoUpgrade: true

@@ -15,7 +15,7 @@ build:
 
 build-local:
 	@echo "=== Building local image for debugging ==="
-	docker buildx build --platform linux/amd64 --load -f Dockerfile -t {{DOCKER_IMAGE_NAME}}  . --progress=plain
+	docker buildx build --load -f Dockerfile -t {{DOCKER_IMAGE_NAME}}  . --progress=plain
 	@echo "Local image built: {{DOCKER_IMAGE_NAME}}"
 	docker images {{DOCKER_IMAGE_NAME}}
 
@@ -25,8 +25,8 @@ test:
 eval *args:
 	docker run --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{DOCKER_IMAGE_NAME}} python -m stonefish.eval {{args}}
 
-local-train *args:
-	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} torchrun -m stonefish.train {{args}}
+train-local *args:
+	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} python -m stonefish.train {{args}}
 
 # Kubernetes deployment commands
 build-push:
