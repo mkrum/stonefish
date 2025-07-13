@@ -61,8 +61,15 @@ def eval_model_tensors(model, dataloader, train_fn, max_batch=20):
 
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
+            # Move inputs and targets to model device
+            device = next(model.parameters()).device
+            inputs = inputs.to(device)
+            targets = targets.to(device)
+
             # Get model outputs - use inference for evaluation
-            logits = model.inference(inputs)
+            # Handle DistributedDataParallel wrapper
+            model_unwrapped = model.module if hasattr(model, "module") else model
+            logits = model_unwrapped.inference(inputs)
 
             # Compute metrics
             loss = cross_entropy(logits, targets)

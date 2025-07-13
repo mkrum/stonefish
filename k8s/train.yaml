@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: stonefish-training
+  annotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+spec:
+  completions: 1
+  parallelism: 1
+  template:
+    metadata:
+      labels:
+        app: stonefish-training
+    spec:
+      tolerations:
+      - key: "cloud.google.com/gke-spot"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      nodeSelector:
+        cloud.google.com/gke-nodepool: "l4-pool-4gpu"
+      containers:
+      - name: stonefish-training
+        image: gcr.io/geometric-notch-290722/stonefish:latest
+        resources:
+          requests:
+            cpu: "12"
+            memory: "40Gi"
+            ephemeral-storage: "50Gi"
+            nvidia.com/gpu: 4
+          limits:
+            cpu: "12"
+            memory: "40Gi"
+            ephemeral-storage: "80Gi"
+            nvidia.com/gpu: 4
+        env:
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-secret
+              key: api-key
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "max_split_size_mb:512"
+        - name: LD_LIBRARY_PATH
+          value: "/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/local/lib"
+        command: ["torchrun", "--standalone", "--nnodes=1", "--nproc_per_node=4", "-m", "stonefish.train"]
+        args: [
+          "configs/train_resnet_small.yml", "/mnt/output/test"
+        ]
+        volumeMounts:
+        - name: output-volume
+          mountPath: "/mnt/output"
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: output-volume
+        persistentVolumeClaim:
+          claimName: stonefish-output-pvc
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "8Gi"
+      restartPolicy: Never
+  backoffLimit: 10
+  ttlSecondsAfterFinished: 86400

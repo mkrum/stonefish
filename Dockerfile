@@ -1,5 +1,7 @@
-# CPU-only Dockerfile for stonefish (Default)
-FROM python:3.10-slim
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 
 # Install base dependencies
 RUN apt-get update && apt-get install -y \
@@ -26,7 +28,7 @@ RUN cd /workdir/MisterQueen && make COMPILE_FLAGS="-std=c99 -Wall -O3 -fPIC" && 
 RUN gcc -shared -o /usr/local/lib/libmisterqueen.so /workdir/MisterQueen/build/release/*.o -lpthread
 RUN gcc -shared -o /usr/local/lib/libtinycthread.so /workdir/MisterQueen/build/release/deps/tinycthread/tinycthread.o -lpthread
 
-# Setup Stockfish with macOS architecture detection
+# Setup Stockfish
 RUN git clone https://github.com/official-stockfish/Stockfish.git && \
     cd Stockfish/src/ && make build net && cd
 

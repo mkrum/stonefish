@@ -92,6 +92,9 @@ class ChessResNet(nn.Module):
 
     def forward(self, x, action):
         """Forward pass for training - action parameter ignored for ResNet"""
+        # Move input to same device as model
+        device = next(self.parameters()).device
+        x = x.to(device)
         x = self.input_proj(x)
         for block in self.res_blocks:
             x = block(x)

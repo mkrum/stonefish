@@ -5,9 +5,9 @@ from typing import Any
 import numpy as np
 import torch
 import tqdm
-import wandb
 from mllg import TestInfo, ValidationInfo
 
+import wandb
 from stonefish.env import RandomAgent, StockfishAgent, TTTEnvTwoPlayer, chess_rollout
 from stonefish.utils import ttt_state_to_str
 
@@ -68,11 +68,17 @@ class ChessEvalContext:
 
 
 def print_example(model, states, actions, infer):
+    # Handle DistributedDataParallel wrapper
+    model_unwrapped = model.module if hasattr(model, "module") else model
     for s, a, i in list(zip(states, actions, infer, strict=False))[:16]:
-        example = s[s != -1]
-        board_str = model.input_rep.from_tensor(example).fen()
-        pred_str = model.output_rep.from_tensor(i).to_str()
-        label_str = model.output_rep.from_tensor(a).to_str()
+        example = s[s != -1].cpu()  # Move to CPU for numpy conversion
+        board_str = model_unwrapped.input_rep.from_tensor(example).fen()
+        pred_str = model_unwrapped.output_rep.from_tensor(
+            i.cpu()
+        ).to_str()  # Move to CPU
+        label_str = model_unwrapped.output_rep.from_tensor(
+            a.cpu()
+        ).to_str()  # Move to CPU
         print(f"{board_str} {pred_str} {label_str}")
 
 
@@ -86,7 +92,13 @@ def eval_model(model, datal, train_fn, max_batch=20):
         model.eval()
 
         with torch.no_grad():
-            infer = model.inference(s).argmax(dim=-1)
+            # Move input to same device as model
+            device = next(model.parameters()).device
+            s = s.to(device)
+            a = a.to(device)
+            # Handle DistributedDataParallel wrapper
+            model_unwrapped = model.module if hasattr(model, "module") else model
+            infer = model_unwrapped.inference(s).argmax(dim=-1)
 
         correct += (infer == a).sum()
         # Assuming this is batch dim? Might need to change

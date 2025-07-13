@@ -1,0 +1,38 @@
+apiVersion: container.gke.io/v1
+kind: NodePool
+metadata:
+  name: l4-4gpu-pool
+  namespace: kube-system
+spec:
+  nodeLocations:
+  - us-central1-a
+  autoscaling:
+    minNodeCount: 0
+    maxNodeCount: 2
+  management:
+    autoRepair: true
+    autoUpgrade: true
+  nodeConfig:
+    machineType: g2-standard-48
+    diskSizeGb: 200
+    diskType: pd-ssd
+    spot: true  # Using spot instances for cost savings
+    gvnic:
+      enabled: false
+    labels:
+      cloud.google.com/gke-nodepool: l4-4gpu-pool
+    taints:
+    - key: nvidia.com/gpu
+      value: "present"
+      effect: NoSchedule
+    reservationAffinity:
+      consumeReservationType: NO_RESERVATION
+    shieldedInstanceConfig:
+      enableSecureBoot: false
+    accelerators:
+    - acceleratorType: nvidia-l4
+      acceleratorCount: 4
+  initialNodeCount: 1
+  placementPolicy: {}
+  projectID: geometric-notch-290722
+  version: latest

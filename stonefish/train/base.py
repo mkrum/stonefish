@@ -7,7 +7,6 @@ import torch.distributed as dist
 import torch.nn.functional as functional
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from stonefish.mask import MoveMask
@@ -108,27 +107,9 @@ class PreTrainContext:
                 model, device_ids=[local_rank], output_device=local_rank
             )
 
-        # Create distributed samplers if needed
+        # For now, skip distributed sampling to avoid DataLoader modification issues
+        # TODO: Implement proper distributed sampling
         train_sampler = None
-        if is_distributed and hasattr(self.train_dl.dataset, "__len__"):
-            train_sampler = DistributedSampler(
-                self.train_dl.dataset,
-                num_replicas=world_size,
-                rank=local_rank,
-                shuffle=True,
-            )
-            self.train_dl.sampler = train_sampler
-            self.train_dl.shuffle = False
-
-            if self.test_dl is not None:
-                test_sampler = DistributedSampler(
-                    self.test_dl.dataset,
-                    num_replicas=world_size,
-                    rank=local_rank,
-                    shuffle=False,
-                )
-                self.test_dl.sampler = test_sampler
-                self.test_dl.shuffle = False
 
         # Initial evaluation
         if is_main_process:
@@ -190,7 +171,9 @@ class PreTrainContext:
                 wandb.log(val_metrics, step=epoch * len(self.train_dl) + batch_idx)
 
                 # Agent evaluation at end of epoch
-                agent_results = self.agent_eval_fn(model, epoch)
+                # Unwrap DistributedDataParallel before passing to agent eval
+                model_unwrapped = model.module if hasattr(model, "module") else model
+                agent_results = self.agent_eval_fn(model_unwrapped, epoch)
 
                 # Separate regular metrics from HTML content
                 regular_metrics = {}
