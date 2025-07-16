@@ -5,11 +5,10 @@ Simple pytorch dataset for the chess data
 import chess
 import datasets
 import torch
-from fastchessenv import CBoard, CMove
+from fastchessenv import CMove
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset
 
-from stonefish.convert import board_to_lczero_tensor
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
 
@@ -98,34 +97,16 @@ class TTTData(ChessData):
         return board_tokens.to_tensor(), move.to_tensor()
 
 
-class HuggingFaceChessDataset(Dataset):
-    """Chess dataset using HuggingFace datasets with fastchessenv board representation"""
+class ChessDataset(Dataset):
+    """Unified chess dataset using tokenizer-based board representation"""
 
-    def __init__(self, split, sample_size=None, dataset_name="mkrum/ParsedChess"):
-        # Load a larger dataset for the ResNet model
-        if sample_size:
-            self.data = datasets.load_dataset(dataset_name)[split].select(
-                range(sample_size)
-            )
-        else:
-            # Load the full dataset
-            self.data = datasets.load_dataset(dataset_name)[split]
-
-    def __getitem__(self, idx):
-        row = self.data[idx]
-        array = CBoard.from_fen(row["board"]).to_array()
-        move = CMove.from_str(row["move"]).to_int()
-        return torch.tensor(array).float(), torch.tensor(move).long()
-
-    def __len__(self):
-        return len(self.data)
-
-
-class LczeroChessDataset(Dataset):
-    """Chess dataset that uses the Leela Chess Zero board representation"""
-
-    def __init__(self, split, sample_size=None, dataset_name="mkrum/ParsedChess"):
-        # Load dataset
+    def __init__(
+        self,
+        split,
+        board_tokenizer=None,
+        sample_size=None,
+        dataset_name="mkrum/ParsedChess",
+    ):
         if sample_size:
             self.data = datasets.load_dataset(dataset_name)[split].select(
                 range(sample_size)
@@ -133,15 +114,14 @@ class LczeroChessDataset(Dataset):
         else:
             self.data = datasets.load_dataset(dataset_name)[split]
 
+        self.board_tokenizer = board_tokenizer
+
     def __getitem__(self, idx):
         row = self.data[idx]
-        # Convert FEN to chess.Board
         board = chess.Board(row["board"])
-        # Use the Lczero converter
-        array = board_to_lczero_tensor(board)
-        # Move handling remains the same
+        board_tensor = self.board_tokenizer.from_board(board)
         move = CMove.from_str(row["move"]).to_int()
-        return torch.tensor(array).float(), torch.tensor(move).long()
+        return board_tensor, torch.tensor(move).long()
 
     def __len__(self):
         return len(self.data)

@@ -13,9 +13,18 @@ if __name__ == "__main__":
 
     config, parser = load_config_and_create_parser()
     parser.add_argument("log_path")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
     config = parse_args_into_config(config, args)
+
+    # Set logging level based on debug flag
+    import logging
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.getLogger().setLevel(logging.WARNING)
 
     # Determine device based on distributed setup
     local_rank = int(os.environ.get("LOCAL_RANK", 0))

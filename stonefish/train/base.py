@@ -6,18 +6,19 @@ from typing import Any
 import torch
 import torch.distributed as dist
 import torch.nn.functional as functional
+import wandb
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
-import wandb
 from stonefish.mask import MoveMask
 
 # Set up logger
 train_logger = logging.getLogger(__name__)
+# Default to WARNING level - will be overridden if debug is enabled
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.WARNING, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 
@@ -109,6 +110,11 @@ class PreTrainContext:
         # Setup distributed training if available
         local_rank, world_size, is_distributed = setup_distributed()
         is_main_process = local_rank == 0
+
+        # Inject the model's board_tokenizer into the datasets
+        self.train_dl.dataset.board_tokenizer = model.board_tokenizer
+        if self.test_dl:
+            self.test_dl.dataset.board_tokenizer = model.board_tokenizer
 
         # Wrap model in DDP if distributed
         if is_distributed:

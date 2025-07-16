@@ -16,7 +16,7 @@ pretrain_context: !PreTrainContext()
         stockfish_depth: 1
 
     train_dl: !DataLoader()
-        dataset: !LczeroChessDataset()
+        dataset: !ChessDataset()
             split: train
             sample_size: 1000
         batch_size: 2
@@ -25,7 +25,7 @@ pretrain_context: !PreTrainContext()
         collate_fn: null
 
     test_dl: !DataLoader()
-        dataset: !LczeroChessDataset()
+        dataset: !ChessDataset()
             split: test
             sample_size: 50000
         batch_size: 2

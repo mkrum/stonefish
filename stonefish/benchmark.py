@@ -1,449 +1,283 @@
-import multiprocessing as mp
+import statistics
 import time
-from collections import deque
 from dataclasses import dataclass
+from typing import Dict, List, Optional
 
 import chess
 import chess.engine
 import chess.pgn
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as functional
-import torch.optim as optim
+from yamlargs.config import YAMLConfig
 
-from stonefish.model import BaseModel
-from stonefish.rep import BoardRep, MoveRep
+from stonefish.config import expose_modules
 
 
 @dataclass
-class Stockfish:
-    """
-    Agent wrapper for the stockfish engine
-    """
+class BenchmarkResults:
+    """Container for benchmark timing results"""
 
-    depth: int
-    _engine: None = None
+    model_name: str
+    batch_size: int
+    forward_times: List[float]
+    backward_times: List[float]
+    memory_mb: float
+    num_parameters: int
 
-    def __post_init__(self):
-        self._engine = chess.engine.SimpleEngine.popen_uci("stockfish")
+    @property
+    def forward_mean(self) -> float:
+        return statistics.mean(self.forward_times)
 
-    def __call__(self, board):
-        result = self._engine.play(board, chess.engine.Limit(depth=self.depth))
-        return result.move
-
-    def quit(self):
-        self._engine.quit()
-
-
-@dataclass
-class RandomEngine:
-    """
-    Agent wrapper for the stockfish engine
-    """
-
-    def __call__(self, board):
-        moves = list(board.legal_moves)
-        return np.random.choice(moves)
-
-
-@dataclass
-class ModelEngine:
-    """
-    Agent wrapper for the stockfish engine
-    """
-
-    path: str
-    device: str
-    _model: None = None
-
-    def __post_init__(self):
-        device = torch.device(self.device)
-        model = BaseModel(device, BoardRep, MoveRep, emb_dim=256)
-        model = model.to(model.device)
-        model.load_state_dict(torch.load(self.path, map_location=device))
-        self._model = model
-
-    def __call__(self, board):
-        tensor = BoardRep.from_board(board).to_tensor()
-        tensor = tensor.unsqueeze(0)
-        move = self._model.inference(tensor, max_len=2)
-        move = MoveRep.from_tensor(move[0]).to_uci()
-        return move
-
-    def sample(self, board):
-        tensor = BoardRep.from_board(board).to_tensor()
-        tensor = tensor.unsqueeze(0)
-        move = self._model.sample(tensor, max_len=2)
-        move = MoveRep.from_tensor(move[0]).to_uci()
-        return move
-
-    def quit(self):
-        self._engine.quit()
-
-
-def rollout(white_engine, black_engine):
-    board = chess.Board()
-
-    while not board.is_game_over():
-        if board.turn == chess.WHITE:
-            move = white_engine(board)
-            while move not in list(board.legal_moves):
-                move = white_engine.sample(board)
-
-        else:
-            move = black_engine(board)
-        board.push(move)
-
-    outcome = board.outcome()
-    # Print the game in any case
-    print(chess.pgn.Game().from_board(board))
-    if outcome.winner is not None:
-        return (int(outcome.winner), int(not outcome.winner))
-    else:
-        return (0.5, 0.5)
-
-
-def run_game(white_engine, black_engine):
-    board = chess.Board()
-
-    moves = 0
-    while not board.is_game_over():
-        if board.turn == chess.WHITE:
-            try:
-                move = white_engine(board)
-            except AssertionError:
-                import pdb
-
-                pdb.set_trace()
-
-            while move not in list(board.legal_moves):
-                move = white_engine.sample(board)
-        else:
-            move = black_engine(board)
-
-        board.push(move)
-        moves += 1
-
-        if board.halfmove_clock >= 100:
-            break
-
-    return chess.pgn.Game().from_board(board)
-
-
-def get_board_reward_white(board):
-    outcome = board.outcome()
-    if outcome.winner:
-        return int(outcome.winner)
-    elif outcome.winner is None:
-        return 0.0
-    else:
-        return -1
-
-
-class _Env:
-    def __init__(self):
-        self.eng = RandomEngine()
-        self.reset()
-
-    def failure_reset(self):
-        reward = torch.FloatTensor([-1])
-        done = torch.BoolTensor([True])
-        self.board = chess.Board()
-        board_tensor = BoardRep.from_board(self.board).to_tensor().unsqueeze(0)
-        return board_tensor, reward, done
-
-    def step(self, move):
-
-        move = MoveRep.from_tensor(move).to_uci()
-
-        reward = 0.0
-
-        if self.board.fullmove_number > 50 or self.board.halfmove_clock >= 99:
-            return self.failure_reset()
-
-        if not self.board.is_legal(move):
-            reward -= 1.0
-            move = np.random.choice(list(self.board.legal_moves))
-
-        self.board.push(move)
-
-        done = False
-        if self.board.is_game_over():
-            done = True
-            reward += get_board_reward_white(self.board)
-            self.board = chess.Board()
-        else:
-            response = self.eng(self.board)
-            self.board.push(response)
-
-            if self.board.is_game_over():
-                done = True
-                reward += get_board_reward_white(self.board)
-                self.board = chess.Board()
-
-        board_tensor = BoardRep.from_board(self.board).to_tensor().unsqueeze(0)
-        return board_tensor, torch.FloatTensor([reward]), torch.BoolTensor([done])
-
-    def reset(self):
-        self.board = chess.Board()
-        board_tensor = BoardRep.from_board(self.board).to_tensor().unsqueeze(0)
-        return board_tensor
-
-
-@dataclass(frozen=True)
-class RolloutTensor:
-
-    state: torch.FloatTensor
-    action: torch.IntTensor
-    next_state: torch.FloatTensor
-    reward: torch.FloatTensor
-    done: torch.BoolTensor
-
-    @classmethod
-    def empty(cls):
-        return cls(None, None, None, None, None)
-
-    def __len__(self):
-        if self.state is None:
-            return 0
-        return self.state.shape[1]
-
-    def is_empty(self):
-        return self.state is None
-
-    def add(self, state, action, next_state, reward, done) -> "RolloutTensor":
-
-        if self.is_empty():
-            return RolloutTensor(state, action, next_state, reward, done)
-
-        new_state = torch.cat((self.state, state), 1)
-        new_action = torch.cat((self.action, action), 1)
-        new_next_state = torch.cat((self.next_state, next_state), 1)
-        new_reward = torch.cat((self.reward, reward), 1)
-        new_done = torch.cat((self.done, done), 1)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done
+    @property
+    def forward_std(self) -> float:
+        return (
+            statistics.stdev(self.forward_times) if len(self.forward_times) > 1 else 0.0
         )
 
-    def stack(self, other) -> "RolloutTensor":  # type: ignore
+    @property
+    def backward_mean(self) -> float:
+        return statistics.mean(self.backward_times)
 
-        if self.is_empty():
-            return other
-
-        new_state = torch.cat((self.state, other.state), 1)
-        new_action = torch.cat((self.action, other.action), 1)
-        new_next_state = torch.cat((self.next_state, other.next_state), 1)
-        new_reward = torch.cat((self.reward, other.reward), 1)
-        new_done = torch.cat((self.done, other.done), 1)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done
+    @property
+    def backward_std(self) -> float:
+        return (
+            statistics.stdev(self.backward_times)
+            if len(self.backward_times) > 1
+            else 0.0
         )
 
-    def decay_(self, gamma, values):
+    @property
+    def throughput_fps(self) -> float:
+        """Forward passes per second"""
+        return self.batch_size / self.forward_mean
 
-        self.reward[:, -1] += ~self.done[:, -1] * gamma * values
+    def __str__(self) -> str:
+        return (
+            f"{self.model_name} (batch={self.batch_size}, {self.num_parameters:,} params): "
+            f"Forward {self.forward_mean*1000:.2f}±{self.forward_std*1000:.2f}ms, "
+            f"Backward {self.backward_mean*1000:.2f}±{self.backward_std*1000:.2f}ms, "
+            f"Throughput {self.throughput_fps:.1f} FPS, "
+            f"Memory {self.memory_mb:.1f}MB"
+        )
 
-        for i in reversed(range(len(self) - 1)):
-            self.reward[:, i] = (
-                self.reward[:, i] + ~self.done[:, i] * gamma * self.reward[:, i + 1]
+
+def benchmark_model(
+    model: torch.nn.Module,
+    batch_sizes: Optional[List[int]] = None,
+    num_trials: int = 100,
+    warmup_trials: int = 10,
+    device: str = "cuda",
+) -> List[BenchmarkResults]:
+    """
+    Benchmark forward and backward pass speeds for a chess model.
+
+    Args:
+        model: The model to benchmark
+        batch_sizes: List of batch sizes to test
+        num_trials: Number of timing trials per batch size
+        warmup_trials: Number of warmup runs before timing
+        device: Device to run on ("cuda" or "cpu")
+
+    Returns:
+        List of BenchmarkResults for each batch size
+    """
+    if batch_sizes is None:
+        batch_sizes = [1, 4, 8, 16, 32]
+
+    device_obj = torch.device(device)
+    model = model.to(device_obj)
+    model.train()  # Enable gradients for backward pass
+
+    # Count parameters
+    num_parameters = sum(p.numel() for p in model.parameters())
+
+    results = []
+
+    for batch_size in batch_sizes:
+        print(
+            f"Benchmarking {model.__class__.__name__} with batch size {batch_size}..."
+        )
+
+        # Create sample input based on model type
+        if hasattr(model, "board_tokenizer"):
+            # Use the model's tokenizer to create proper input
+            boards = [chess.Board() for _ in range(batch_size)]
+            input_tensor = model.board_tokenizer.from_board_batch(boards).to(device_obj)
+            print(f"  Input tensor shape: {input_tensor.shape}")
+        else:
+            # Fallback for older models - assume flat input
+            input_tensor = torch.randn(batch_size, 69, device=device_obj)
+
+        # Create dummy targets for loss calculation
+        targets = torch.randint(0, 5700, (batch_size,), device=device_obj)
+
+        # Warmup runs
+        for _ in range(warmup_trials):
+            with torch.no_grad():
+                _ = model.inference(input_tensor)
+
+        torch.cuda.synchronize() if device_obj.type == "cuda" else None
+
+        forward_times = []
+        backward_times = []
+
+        for _ in range(num_trials):
+            # Forward pass timing
+            torch.cuda.synchronize() if device_obj.type == "cuda" else None
+            start_time = time.perf_counter()
+
+            outputs = model.inference(input_tensor)
+
+            torch.cuda.synchronize() if device_obj.type == "cuda" else None
+            forward_time = time.perf_counter() - start_time
+            forward_times.append(forward_time)
+
+            # Backward pass timing
+            loss = nn.CrossEntropyLoss()(outputs, targets)
+
+            torch.cuda.synchronize() if device_obj.type == "cuda" else None
+            start_time = time.perf_counter()
+
+            loss.backward()
+
+            torch.cuda.synchronize() if device_obj.type == "cuda" else None
+            backward_time = time.perf_counter() - start_time
+            backward_times.append(backward_time)
+
+            # Clear gradients for next iteration
+            model.zero_grad()
+
+        # Measure memory usage
+        if device_obj.type == "cuda":
+            memory_mb = torch.cuda.max_memory_allocated(device_obj) / 1024 / 1024
+            torch.cuda.reset_peak_memory_stats(device_obj)
+        else:
+            memory_mb = 0.0
+
+        result = BenchmarkResults(
+            model_name=model.__class__.__name__,
+            batch_size=batch_size,
+            forward_times=forward_times,
+            backward_times=backward_times,
+            memory_mb=memory_mb,
+            num_parameters=num_parameters,
+        )
+
+        results.append(result)
+        print(f"  {result}")
+
+    return results
+
+
+def print_benchmark_summary(results: List[BenchmarkResults]):
+    """Print a formatted summary of benchmark results"""
+    print("\n" + "=" * 80)
+    print("BENCHMARK SUMMARY")
+    print("=" * 80)
+
+    # Group by model name
+    models: Dict[str, List[BenchmarkResults]] = {}
+    for result in results:
+        if result.model_name not in models:
+            models[result.model_name] = []
+        models[result.model_name].append(result)
+
+    for model_name, model_results in models.items():
+        print(f"\n{model_name}:")
+        print("-" * len(model_name))
+        print(
+            f"{'Batch':<6} {'Forward (ms)':<15} {'Backward (ms)':<15} {'Throughput (FPS)':<18} {'Memory (MB)':<12}"
+        )
+        print(f"Parameters: {model_results[0].num_parameters:,}")
+        print("-" * 76)
+
+        for result in model_results:
+            print(
+                f"{result.batch_size:<6} "
+                f"{result.forward_mean*1000:>7.2f}±{result.forward_std*1000:<5.2f} "
+                f"{result.backward_mean*1000:>7.2f}±{result.backward_std*1000:<6.2f} "
+                f"{result.throughput_fps:>14.1f} "
+                f"{result.memory_mb:>8.1f}"
             )
 
-    def raw_rewards(self):
-        return self.reward[self.done]
 
-    def to(self, device):
-        new_state = self.state.to(device)
-        new_action = self.action.to(device)
-        new_next_state = self.next_state.to(device)
-        new_reward = self.reward.to(device)
-        new_done = self.done.to(device)
-        return RolloutTensor(
-            new_state, new_action, new_next_state, new_reward, new_done
-        )
+def load_model_from_config(config_path: str, device: str = "cuda"):
+    """Load a model from config file (no weights needed for benchmarking)"""
 
+    # Load config using yamlargs
+    config = YAMLConfig.load(config_path)
 
-def worker(state_q, action_q):
-    env = _Env()
+    # Build model - call () to instantiate from LazyConstructor
+    model = config["model"]()
+    print(f"Model class: {model.__class__.__name__}")
+    print(
+        f"Model attributes: {[attr for attr in dir(model) if not attr.startswith('_')][:10]}"
+    )
+    model = model.to(device)
 
-    state = env.reset()
-    state_q.put(state)
-
-    while True:
-        action = action_q.get()
-        # No need to measure timing here
-        out = env.step(action)
-        state_q.put(out)
-
-
-class StackedEnv:
-    def _reset(self):
-        self.action_qs = [mp.Queue() for _ in range(self.n)]
-        self.state_qs = [mp.Queue() for _ in range(self.n)]
-
-        procs = [
-            mp.Process(target=worker, args=(self.state_qs[i], self.action_qs[i]))
-            for i in range(self.n)
-        ]
-
-        for p in procs:
-            p.start()
-
-    def __init__(self, n):
-        self.n = n
-        self._reset()
-
-    def reset(self):
-        states = [s.get() for s in self.state_qs]
-        return torch.stack(states)
-
-    def step(self, actions):
-
-        for i, aq in enumerate(self.action_qs):
-            aq.put(actions[i])
-
-        out = [s.get() for s in self.state_qs]
-        states, rewards, dones = zip(*out, strict=False)
-        return torch.stack(states), torch.stack(rewards), torch.stack(dones)
-
-
-def batched_index_select(input, dim, index):
-    expanse = list(input.shape)
-    expanse[0] = -1
-    expanse[dim] = -1
-    index = index.expand(expanse)
-    return torch.gather(input, dim, index)
+    return model
 
 
 if __name__ == "__main__":
-    mp.set_start_method("spawn")
+    import argparse
 
-    device = torch.device("cuda")
+    expose_modules()
 
-    policy = BaseModel(device, BoardRep, MoveRep, emb_dim=256)
-    policy.load_state_dict(
-        torch.load("/nfs/fishtank/openai/model_1.pth", map_location=device)
+    parser = argparse.ArgumentParser(description="Benchmark chess model performance")
+    parser.add_argument("config", type=str, help="Path to model config file")
+    parser.add_argument(
+        "--device",
+        default="cuda",
+        choices=["cuda", "cpu"],
+        help="Device to run benchmarks on",
     )
-    policy = policy.to(device)
-
-    value_model = nn.Sequential(nn.Linear(256, 1)).to(device)
-
-    env = StackedEnv(2)
-
-    opt = optim.Adam(
-        [
-            {"params": list(value_model.parameters()), "lr": 1e-2},
-            {"params": list(policy.parameters()), "lr": 5e-5},
-        ]
+    parser.add_argument(
+        "--batch-sizes",
+        nargs="+",
+        type=int,
+        default=[1, 4, 8, 16, 32],
+        help="Batch sizes to benchmark",
+    )
+    parser.add_argument(
+        "--trials", type=int, default=100, help="Number of timing trials per batch size"
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=10, help="Number of warmup trials"
     )
 
-    pl_hist: deque = deque(maxlen=100)
-    vl_hist: deque = deque(maxlen=100)
-    progress: deque = deque(maxlen=100)
+    args = parser.parse_args()
 
-    state = env.reset()
-    for it in range(int(100)):
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        print("CUDA requested but not available, falling back to CPU")
+        device = torch.device("cpu")
 
-        history = RolloutTensor.empty()
+    print(f"Running benchmarks on {device}")
+    print(f"Config: {args.config}")
+    print(f"Batch sizes: {args.batch_sizes}")
+    print(f"Trials per batch: {args.trials}")
 
-        times: dict[str, list] = {"step": [], "model": [], "env": []}
+    # Load model from config
+    try:
+        model = load_model_from_config(args.config, args.device)
+        num_params = sum(p.numel() for p in model.parameters())
+        print(f"Loaded model: {model.__class__.__name__} ({num_params:,} parameters)")
+        print(f"Board tokenizer type: {model.board_tokenizer.__class__.__name__}")
+        print(f"Board tokenizer shape: {model.board_tokenizer.shape}")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        import traceback
 
-        for _ in range(32):
+        traceback.print_exc()
+        exit(1)
 
-            total_start = time.time()
+    # Run benchmark
+    results = benchmark_model(
+        model,
+        batch_sizes=args.batch_sizes,
+        num_trials=args.trials,
+        warmup_trials=args.warmup,
+        device=args.device,
+    )
 
-            model_start = time.time()
-            action = policy.sample(state.squeeze(1), max_len=2)
-            model_end = time.time()
-
-            env_start = time.time()
-            next_state, reward, done = env.step(action.cpu())
-            env_en = time.time()
-            action = action.unsqueeze(1)
-
-            history = history.add(state, action, next_state, reward, done)
-
-            state = next_state
-            # tot_time += time.time() - start
-
-        # print(tot_time)
-        # print(f"Sample: {time.time() - start}")
-        start = time.time()
-
-        bench = state[:1]
-        while bench.shape[0] <= 512:
-            bench_times: list[float] = []
-            bench_ = bench.squeeze(1)
-            for _ in range(100):
-                start = time.time()
-                with torch.no_grad():
-                    policy.sample(bench_, max_len=2)
-                end = time.time()
-                bench_times.append(end - start)
-
-            print(f"{bench.shape[0]}", end="")
-            for t in bench_times:
-                print(f",{t}", end="")
-            print()
-            bench = bench.repeat(2, 1, 1)
-
-        exit()
-        import pdb
-
-        pdb.set_trace()
-
-        out, _ = policy(
-            state.squeeze(1).to(device), action.squeeze(1), return_hidden=True
-        )
-        decay_values = value_model(out[:, -1, :])
-
-        history = history.to(device)
-        history.decay_(
-            0.99,
-            decay_values.view(
-                -1,
-            ).detach(),
-        )
-
-        term_rewards = history.reward[history.done]
-        for r in term_rewards:
-            progress.append(r.item())
-
-        flat_state = history.state.view(-1, history.state.shape[-1])
-        flat_next_state = history.state.view(-1, history.next_state.shape[-1])
-        flat_action = history.action.view(-1, history.action.shape[-1])
-        flat_reward = history.reward.view(
-            -1,
-        )
-
-        out, full_logits = policy(flat_state, flat_action, return_hidden=True)
-        out = out[:, -1, :]
-        values = value_model(out)
-
-        logits = batched_index_select(full_logits, 2, flat_action[:, 1:].unsqueeze(-1))
-        logits = logits.squeeze(-1)
-
-        opt.zero_grad()
-
-        value_loss = functional.mse_loss(values, flat_reward.unsqueeze(-1))
-        policy_loss = -1.0 * torch.mean(flat_reward.unsqueeze(-1).cuda() * logits)
-
-        loss = value_loss + policy_loss
-        loss.backward()
-        opt.step()
-
-        print(f"Train: {time.time() - start}")
-
-        pl_hist.append(policy_loss.item())
-        vl_hist.append(value_loss.item())
-
-        print(
-            f"{it}: PL: {np.mean(pl_hist)} VL: {np.mean(vl_hist)} R: {np.mean(progress)}",
-            flush=True,
-        )
-
-        if it % 100 == 0:
-            torch.save(policy.state_dict(), "/nfs/fishtank/openai/random.pth")
-            torch.save(
-                value_model.state_dict(), "/nfs/fishtank/openai/random_value.pth"
-            )
+    print_benchmark_summary(results)

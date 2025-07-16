@@ -11,16 +11,22 @@ DOCKER_IMAGE_NAME := "gcr.io/" + PROJECT_ID + "/" + IMAGE_NAME + ":latest"
 
 # Local development commands
 build:
+	@echo "=== Building locally ==="
 	docker build -f Dockerfile -t  {{DOCKER_IMAGE_NAME}} . --progress=plain
 
 build-local:
-	@echo "=== Building local image for debugging ==="
+	@echo "=== Building Locally (buildx) ==="
 	docker buildx build --load -f Dockerfile -t {{DOCKER_IMAGE_NAME}}  . --progress=plain
 	@echo "Local image built: {{DOCKER_IMAGE_NAME}}"
 	docker images {{DOCKER_IMAGE_NAME}}
 
 test:
+	@echo "=== Running Tests ==="
 	docker run -v $PWD:/stonefish {{DOCKER_IMAGE_NAME}} pytest -s
+
+benchmark *args:
+	@echo "=== Benchmarking Model ==="
+	docker run --rm -it -v "$PWD:/workspace" -w /workspace {{DOCKER_IMAGE_NAME}} python stonefish/benchmark.py {{args}}
 
 eval *args:
 	docker run --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{DOCKER_IMAGE_NAME}} python -m stonefish.eval {{args}}
@@ -75,7 +81,7 @@ create-wandb-secret:
 	@echo "=== Creating Weights & Biases secret ==="
 	kubectl create secret generic wandb-secret --from-literal=api-key="${WANDB_API_KEY}" --dry-run=client -o yaml | kubectl apply -f -
 
-deploy-training:
+train-deploy:
 	@echo "=== Deploying training job ==="
 	kubectl delete job stonefish-training --ignore-not-found
 	kubectl apply -f k8s/train.yaml
