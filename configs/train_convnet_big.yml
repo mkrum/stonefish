@@ -8,7 +8,6 @@ pretrain_context: !PreTrainContext()
 
     agent_eval_fn: !training_agent_eval()
         agent_config: !ModelChessAgent
-            model_type: conv
             temperature: 1.0
             sample: true
         games_vs_random: 10
@@ -44,7 +43,6 @@ model: !ChessConvNet()
     output_dim: 5700
 
 agent: !ModelChessAgent()
-    model_type: conv
     temperature: 1.0
     sample: true
 

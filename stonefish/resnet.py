@@ -11,6 +11,11 @@ import torch.nn as nn
 from fastchessenv import CBoard, CMove
 
 from stonefish.convert import lczero_tensor_to_board
+from stonefish.tokenizers import (
+    FlatBoardTokenizer,
+    FlatMoveTokenizer,
+    LCZeroBoardTokenizer,
+)
 
 
 class TempOutputRep:
@@ -81,9 +86,9 @@ class ChessResNet(nn.Module):
 
     def __init__(self, input_dim=69, hidden_dim=4096, num_blocks=8, output_dim=5700):
         super(ChessResNet, self).__init__()
-        # Patch
-        self.output_rep = TempOutputRep()
-        self.input_rep = TempInputRep()
+        # Tokenizers
+        self.board_tokenizer = FlatBoardTokenizer()
+        self.move_tokenizer = FlatMoveTokenizer()
 
         self.hidden_dim = hidden_dim
         self.input_dim = input_dim
@@ -121,9 +126,9 @@ class ChessConvNet(nn.Module):
     ):
         super(ChessConvNet, self).__init__()
 
-        # Patch
-        self.output_rep = TempOutputRep()
-        self.input_rep = TempInputBoardRep()
+        # Tokenizers
+        self.board_tokenizer = LCZeroBoardTokenizer()
+        self.move_tokenizer = FlatMoveTokenizer()
 
         self.input_channels = input_channels
         self.num_filters = num_filters

@@ -1,3 +1,4 @@
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +13,12 @@ from torch.utils.data.distributed import DistributedSampler
 
 import wandb
 from stonefish.mask import MoveMask
+
+# Set up logger
+train_logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 
 def train_step(model, state, output):
@@ -157,18 +164,34 @@ class PreTrainContext:
             dist.barrier()
 
         for epoch in range(self.epochs):
+            train_logger.info(f"Starting epoch {epoch}")
             # Set epoch for distributed sampler
             if train_sampler is not None:
                 train_sampler.set_epoch(epoch)
 
+            train_logger.info("About to iterate over training dataloader")
             for batch_idx, (state, output) in enumerate(self.train_dl):
+                train_logger.info(f"Successfully got batch {batch_idx}")
+                train_logger.info(
+                    f"Processing batch {batch_idx}, state shape: {state.shape}, output shape: {output.shape}"
+                )
+
                 opt.zero_grad()
+                train_logger.debug("Gradients zeroed")
 
                 loss, accuracy = self.train_fn(model, state, output)
+                train_logger.debug(
+                    f"Forward pass complete, loss: {loss.item():.6f}, accuracy: {accuracy.item():.4f}"
+                )
+
                 loss.backward()
+                train_logger.debug("Backward pass complete")
 
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
+                train_logger.debug("Gradient clipping complete")
+
                 opt.step()
+                train_logger.debug("Optimizer step complete")
 
                 # Only log from main process
                 if is_main_process:
@@ -185,7 +208,11 @@ class PreTrainContext:
                         and batch_idx > 0
                         and self.eval_fn
                     ):
+                        train_logger.info(
+                            f"Starting mid-epoch evaluation at batch {batch_idx}"
+                        )
                         out = self.eval_fn(model, self.test_dl, self.train_fn)
+                        train_logger.info("Mid-epoch evaluation complete")
                         logger.log_info(ValidationInfo(epoch, batch_idx, out))
                         logger.checkpoint(epoch, batch_idx, model)
 
@@ -202,9 +229,13 @@ class PreTrainContext:
                     dist.barrier()
 
             # End of epoch evaluation
+            train_logger.info(f"Finished training for epoch {epoch}")
             if is_main_process:
+                train_logger.info(f"Starting end-of-epoch evaluation for epoch {epoch}")
                 if self.eval_fn is not None:
+                    train_logger.info("Running model evaluation")
                     out = self.eval_fn(model, self.test_dl, self.train_fn)
+                    train_logger.info("Model evaluation complete")
                     logger.log_info(ValidationInfo(epoch, batch_idx, out))
 
                     # Log validation metrics to wandb at end of epoch
@@ -213,12 +244,16 @@ class PreTrainContext:
                         val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
                     wandb.log(val_metrics, step=epoch * len(self.train_dl) + batch_idx)
 
+                train_logger.info("Saving checkpoint")
                 logger.checkpoint(epoch, batch_idx, model)
+                train_logger.info("Checkpoint saved")
 
                 # Agent evaluation at end of epoch
+                train_logger.info("Starting agent evaluation")
                 # Unwrap DistributedDataParallel before passing to agent eval
                 model_unwrapped = model.module if hasattr(model, "module") else model
                 agent_results = self.agent_eval_fn(model_unwrapped, epoch)
+                train_logger.info("Agent evaluation complete")
 
                 # Separate regular metrics from HTML content
                 regular_metrics = {}

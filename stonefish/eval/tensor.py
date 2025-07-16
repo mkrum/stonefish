@@ -7,6 +7,7 @@ without requiring conversion to chess objects.
 
 import torch
 import torch.nn.functional
+import tqdm
 from mllg import TestInfo
 
 
@@ -60,7 +61,7 @@ def eval_model_tensors(model, dataloader, train_fn, max_batch=20):
     batch_count = 0
 
     with torch.no_grad():
-        for batch_idx, (inputs, targets) in enumerate(dataloader):
+        for batch_idx, (inputs, targets) in tqdm.tqdm(enumerate(dataloader)):
             # Move inputs and targets to model device
             device = next(model.parameters()).device
             inputs = inputs.to(device)

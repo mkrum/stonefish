@@ -77,13 +77,9 @@ def print_example(model, states, actions, infer):
         a = actions[idx]
         i = infer[idx]
 
-        board_str = model_unwrapped.input_rep.from_tensor(s).fen()
-        pred_str = model_unwrapped.output_rep.from_tensor(
-            i.cpu()
-        ).to_str()  # Move to CPU
-        label_str = model_unwrapped.output_rep.from_tensor(
-            a.cpu()
-        ).to_str()  # Move to CPU
+        board_str = model_unwrapped.board_tokenizer.to_fen(s)
+        pred_str = model_unwrapped.move_tokenizer.to_uci(i.cpu())
+        label_str = model_unwrapped.move_tokenizer.to_uci(a.cpu())
         print(f"{board_str} {pred_str} {label_str}")
 
 

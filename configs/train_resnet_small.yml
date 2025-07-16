@@ -18,6 +18,7 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !HuggingFaceChessDataset()
             split: train
+            sample_size: 1000
         batch_size: 64
         shuffle: True
         drop_last: True

@@ -135,7 +135,6 @@ class ModelChessAgent:
     """Complete ChessAgent that wraps a model and handles the full pipeline"""
 
     model: torch.nn.Module
-    model_type: str = "standard"  # "standard" (CBoard) or "conv" (Lczero)
     temperature: float = 1.0
     sample: bool = True
 
@@ -144,25 +143,10 @@ class ModelChessAgent:
 
     def __call__(self, board: chess.Board) -> chess.Move:
         """Select a move for the given board"""
-        # Convert board to tensor based on model type
-        if self.model_type == "conv":
-            from stonefish.convert import board_to_lczero_tensor
-
-            board_array = board_to_lczero_tensor(board)
-            board_tensor = (
-                torch.tensor(board_array, dtype=torch.float32)
-                .unsqueeze(0)
-                .to(self.device)
-            )
-        else:
-            from fastchessenv import CBoard
-
-            board_array = CBoard.from_fen(board.fen()).to_array()
-            board_tensor = (
-                torch.tensor(board_array, dtype=torch.float32)
-                .unsqueeze(0)
-                .to(self.device)
-            )
+        # Convert board to tensor using model's tokenizer
+        board_tensor = (
+            self.model.board_tokenizer.from_board(board).unsqueeze(0).to(self.device)
+        )
 
         # Get model prediction
         with torch.no_grad():
