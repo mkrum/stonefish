@@ -25,12 +25,12 @@ spec:
         resources:
           requests:
             cpu: "12"
-            memory: "80Gi"
+            memory: "40Gi"
             ephemeral-storage: "50Gi"
             nvidia.com/gpu: 4
           limits:
             cpu: "12"
-            memory: "80Gi"
+            memory: "40Gi"
             ephemeral-storage: "80Gi"
             nvidia.com/gpu: 4
         env:
@@ -43,9 +43,9 @@ spec:
           value: "max_split_size_mb:512"
         - name: LD_LIBRARY_PATH
           value: "/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/local/lib"
-        command: ["torchrun", "--standalone", "--nnodes=1", "--nproc_per_node=4", "-m", "stonefish.train"]
+        command: ["python", "stonefish/benchmark.py"]
         args: [
-          "configs/train_convnet_big.yml", "/mnt/output/big_convnet_model"
+          "configs/train_convnet_big.yml"
         ]
         volumeMounts:
         - name: output-volume

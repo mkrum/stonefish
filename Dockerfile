@@ -37,9 +37,8 @@ ENV PATH=$PATH:/workdir/Stockfish/src
 # Install Python dependencies (CPU-only version)
 WORKDIR /stonefish
 
-RUN uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu
-COPY requirements-cpu.txt /stonefish/
-RUN uv pip install --system --no-cache-dir -r requirements-cpu.txt --index-url https://pypi.org/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple/
+COPY requirements.txt /stonefish/
+RUN uv pip install --system --no-cache-dir -r requirements.txt --index-url https://pypi.org/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # Install stonefish
 COPY . /stonefish

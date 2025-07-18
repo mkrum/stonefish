@@ -1,7 +1,6 @@
-
 pretrain_context: !PreTrainContext()
     epochs: 5
-    eval_freq: 500
+    eval_freq: 1000
     gradient_clip: 1.0
 
     train_fn: !train_step
@@ -11,15 +10,14 @@ pretrain_context: !PreTrainContext()
         agent_config: !ModelChessAgent
             temperature: 1.0
             sample: true
-        games_vs_random: 100
-        games_vs_stockfish: 100
+        games_vs_random: 50
+        games_vs_stockfish: 50
         stockfish_depth: 1
 
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-            sample_size: 1000
-        batch_size: 64
+        batch_size: 512
         shuffle: True
         drop_last: True
         collate_fn: null
@@ -27,15 +25,15 @@ pretrain_context: !PreTrainContext()
     test_dl: !DataLoader()
         dataset: !ChessDataset()
             split: test
-            sample_size: 1000
-        batch_size: 64
+            sample_size: 50000
+        batch_size: 512
         shuffle: True
         collate_fn: null
 
 model: !ChessResNet()
     input_dim: 69
-    hidden_dim: 512
-    num_blocks: 4
+    hidden_dim: 2048
+    num_blocks: 2
     output_dim: 5700
 
 agent: !ModelChessAgent()
@@ -43,4 +41,4 @@ agent: !ModelChessAgent()
     sample: true
 
 opt: !Adam()
-    lr: !!float 1e-3
+    lr: !!float 5e-4

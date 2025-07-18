@@ -8,38 +8,41 @@ pretrain_context: !PreTrainContext()
 
     agent_eval_fn: !training_agent_eval()
         agent_config: !ModelChessAgent
-            model_type: conv
             temperature: 1.0
             sample: true
-        games_vs_random: 10
-        games_vs_stockfish: 10
+        games_vs_random: 100
+        games_vs_stockfish: 100
         stockfish_depth: 1
 
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-            sample_size: 1000
-        batch_size: 2
+        batch_size: 128
         shuffle: True
         drop_last: True
         collate_fn: null
+        num_workers: 1
+        pin_memory: false
+        prefetch_factor: 2
 
     test_dl: !DataLoader()
         dataset: !ChessDataset()
             split: test
-            sample_size: 50000
-        batch_size: 2
+            sample_size: 1000
+        batch_size: 128
         shuffle: True
         collate_fn: null
+        num_workers: 1
+        pin_memory: false
+        prefetch_factor: 2
 
 model: !ChessConvNet()
     input_channels: 20
-    num_filters: 1
+    num_filters: 128
     num_blocks: 1
     output_dim: 5700
 
 agent: !ModelChessAgent()
-    model_type: conv
     temperature: 1.0
     sample: true
 

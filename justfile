@@ -86,6 +86,10 @@ train-deploy:
 	kubectl delete job stonefish-training --ignore-not-found
 	kubectl apply -f k8s/train.yaml
 
+benchmark-deploy *args:
+	@echo "=== Benchmarking Model On k8s ==="
+	kubectl apply -f k8s/benchmark.yaml
+
 # Creates the
 up: create-cluster create-l4-pool apply-storage create-wandb-secret
 
@@ -97,4 +101,10 @@ cleanup:
 	gcloud container clusters delete {{CLUSTER_NAME}} --zone={{CLUSTER_ZONE}} --quiet
 
 stop-train:
+	@echo "=== Stopping Training Job ==="
 	kubectl delete job stonefish-training
+
+shell:
+	@echo "=== Debug Shell ==="
+	kubectl delete job stonefish-training --ignore-not-found
+	kubectl apply -f k8s/shell.yaml

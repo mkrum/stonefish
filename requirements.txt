@@ -1,5 +1,4 @@
-torch>=2.0.0
-transformers[flax]
+transformers
 datasets
 python-chess
 pytest
@@ -10,7 +9,8 @@ pyyaml
 chessplotlib
 yamlargs
 mllg
-optax
 wandb
+optax
 numpy>=1.24.0
 cffi
+open_spiel

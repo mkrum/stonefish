@@ -1,5 +1,5 @@
 pretrain_context: !PreTrainContext()
-    epochs: 5
+    epochs: 2
     eval_freq: 1000
     gradient_clip: 1.0
 
@@ -10,14 +10,14 @@ pretrain_context: !PreTrainContext()
         agent_config: !ModelChessAgent
             temperature: 1.0
             sample: true
-        games_vs_random: 10
-        games_vs_stockfish: 50
+        games_vs_random: 100
+        games_vs_stockfish: 100
         stockfish_depth: 1
 
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-        batch_size: 16
+        batch_size: 128
         shuffle: True
         drop_last: True
         collate_fn: null
@@ -29,7 +29,7 @@ pretrain_context: !PreTrainContext()
         dataset: !ChessDataset()
             split: test
             sample_size: 1000
-        batch_size: 16
+        batch_size: 128
         shuffle: True
         collate_fn: null
         num_workers: 1
@@ -39,7 +39,7 @@ pretrain_context: !PreTrainContext()
 model: !ChessConvNet()
     input_channels: 20
     num_filters: 128
-    num_blocks: 8
+    num_blocks: 16
     output_dim: 5700
 
 agent: !ModelChessAgent()

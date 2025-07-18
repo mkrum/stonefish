@@ -227,9 +227,9 @@ if __name__ == "__main__":
     parser.add_argument("config", type=str, help="Path to model config file")
     parser.add_argument(
         "--device",
-        default="cuda",
+        default=None,
         choices=["cuda", "cpu"],
-        help="Device to run benchmarks on",
+        help="Device to run benchmarks on (auto-detects if not specified)",
     )
     parser.add_argument(
         "--batch-sizes",
@@ -247,10 +247,20 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    device = torch.device(args.device)
-    if device.type == "cuda" and not torch.cuda.is_available():
+    # Auto-detect device if not specified
+    if args.device is None:
+        if torch.cuda.is_available():
+            device_str = "cuda"
+        else:
+            device_str = "cpu"
+    else:
+        device_str = args.device
+
+    device = torch.device(device_str)
+    if device_str == "cuda" and not torch.cuda.is_available():
         print("CUDA requested but not available, falling back to CPU")
         device = torch.device("cpu")
+        device_str = "cpu"
 
     print(f"Running benchmarks on {device}")
     print(f"Config: {args.config}")
@@ -259,7 +269,7 @@ if __name__ == "__main__":
 
     # Load model from config
     try:
-        model = load_model_from_config(args.config, args.device)
+        model = load_model_from_config(args.config, device_str)
         num_params = sum(p.numel() for p in model.parameters())
         print(f"Loaded model: {model.__class__.__name__} ({num_params:,} parameters)")
         print(f"Board tokenizer type: {model.board_tokenizer.__class__.__name__}")
@@ -277,7 +287,7 @@ if __name__ == "__main__":
         batch_sizes=args.batch_sizes,
         num_trials=args.trials,
         warmup_trials=args.warmup,
-        device=args.device,
+        device=device_str,
     )
 
     print_benchmark_summary(results)

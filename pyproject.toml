@@ -6,16 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "stonefish"
 version = "0.1.0"
 description = "Stonefish project"
-readme = "readme.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 dependencies = [
     "torch>=2.0.0",
     "transformers",
     "datasets",
     "python-chess",
-    "pytest",
-    "pytest-cov",
     "rich",
     "matplotlib",
     "pyyaml",
@@ -25,6 +22,8 @@ dependencies = [
     "optax",
     "wandb",
     "fastchessenv",
+    "numpy>=1.24.0",
+    "cffi",
 ]
 
 [project.scripts]
@@ -44,7 +43,7 @@ test = [
     "pytest-cov",
 ]
 rl = [
-    "open-spiel",
+    "open_spiel",
 ]
 
 [tool.black]
