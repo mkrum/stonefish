@@ -17,7 +17,7 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-        batch_size: 128
+        batch_size: 256
         shuffle: True
         drop_last: True
         collate_fn: null
@@ -29,7 +29,7 @@ pretrain_context: !PreTrainContext()
         dataset: !ChessDataset()
             split: test
             sample_size: 1000
-        batch_size: 128
+        batch_size: 256
         shuffle: True
         collate_fn: null
         num_workers: 1
@@ -39,7 +39,7 @@ pretrain_context: !PreTrainContext()
 model: !ChessConvNet()
     input_channels: 20
     num_filters: 128
-    num_blocks: 16
+    num_blocks: 32
     output_dim: 5700
 
 agent: !ModelChessAgent()
