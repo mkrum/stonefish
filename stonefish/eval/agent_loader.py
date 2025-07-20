@@ -80,6 +80,16 @@ def load_model_from_config(
     else:
         state_dict = checkpoint
 
+    # Handle DDP checkpoints - remove 'module.' prefix
+    if isinstance(state_dict, dict) and any(
+        key.startswith("module.") for key in state_dict.keys()
+    ):
+        state_dict = {
+            key[7:]: value
+            for key, value in state_dict.items()
+            if key.startswith("module.")
+        }
+
     model.load_state_dict(state_dict)
     model.eval()
 

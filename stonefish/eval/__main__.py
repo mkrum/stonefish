@@ -1,8 +1,8 @@
 """
-Evaluate chess agents with various evaluation methods.
+Evaluate chess agents against each other.
 
 Usage:
-    python -m stonefish.eval --agent model:config.yml:checkpoint.pth --eval-games-random 100
+    python -m stonefish.eval --agent1 model:config.yml:checkpoint.pth --agent2 random --games 100
 """
 
 import argparse
@@ -10,7 +10,8 @@ from typing import List
 
 from mllg import TestInfo
 
-from stonefish.eval.agent import evaluate_agent_vs_random, evaluate_agent_vs_stockfish
+from stonefish.config import expose_modules
+from stonefish.eval.agent import evaluate_agents
 from stonefish.eval.agent_loader import load_agent
 
 
@@ -29,45 +30,30 @@ def print_results_table(results: List[TestInfo], title: str):
     print("=" * 60)
 
 
-def run_game_evaluations(agent, args) -> List[TestInfo]:
-    """Run all requested game-based evaluations."""
-    all_results = []
-
-    if args.eval_games_random:
-        print(f"\nEvaluating vs random opponent ({args.eval_games_random} games)...")
-        results = evaluate_agent_vs_random(agent, num_games=args.eval_games_random)
-        all_results.extend(results)
-        print_results_table(results, "VS RANDOM OPPONENT")
-
-    if args.eval_games_stockfish:
-        print(
-            f"\nEvaluating vs Stockfish depth {args.stockfish_depth} ({args.eval_games_stockfish} games)..."
-        )
-        results = evaluate_agent_vs_stockfish(
-            agent,
-            num_games=args.eval_games_stockfish,
-            stockfish_depth=args.stockfish_depth,
-        )
-        all_results.extend(results)
-        print_results_table(results, f"VS STOCKFISH (depth {args.stockfish_depth})")
-
-    return all_results
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate chess agents with various evaluation methods",
+        description="Evaluate two chess agents against each other",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    # Agent specification
+    # Agent specifications
     parser.add_argument(
-        "--agent",
+        "--agent1",
         required=True,
-        help="Agent specification: model:config.yml:checkpoint.pth, random, or stockfish:depth=N",
+        help="First agent: model:config.yml:checkpoint.pth, random, or stockfish:depth=N",
     )
     parser.add_argument(
-        "--agent2", help="Second agent for comparison evaluations (optional)"
+        "--agent2",
+        required=True,
+        help="Second agent: model:config.yml:checkpoint.pth, random, or stockfish:depth=N",
+    )
+
+    # Number of games
+    parser.add_argument(
+        "--games",
+        type=int,
+        default=100,
+        help="Number of games to play (default: 100)",
     )
 
     # Device
@@ -75,44 +61,23 @@ def main():
         "--device", default="cpu", choices=["cpu", "cuda"], help="Device to run on"
     )
 
-    # Game-based evaluations
-    parser.add_argument(
-        "--eval-games-random",
-        type=int,
-        help="Number of games to play vs random opponent",
-    )
-    parser.add_argument(
-        "--eval-games-stockfish", type=int, help="Number of games to play vs Stockfish"
-    )
-    parser.add_argument(
-        "--stockfish-depth",
-        type=int,
-        default=1,
-        help="Stockfish search depth for game evaluation",
-    )
-
     args = parser.parse_args()
 
-    # Load agent
-    print(f"Loading agent: {args.agent}")
-    agent = load_agent(args.agent, device=args.device)
+    # Load agents
+    print(f"Loading agent 1: {args.agent1}")
+    agent1 = load_agent(args.agent1, device=args.device)
 
-    # Run evaluations
-    all_results = []
+    print(f"Loading agent 2: {args.agent2}")
+    agent2 = load_agent(args.agent2, device=args.device)
 
-    # Game-based evaluations
-    game_results = run_game_evaluations(agent, args)
-    all_results.extend(game_results)
+    # Run evaluation
+    print(f"\nPlaying {args.games} games between agents...")
+    results = evaluate_agents(agent1, agent2, num_games=args.games)
 
-    # Summary
-    if all_results:
-        print("\n" + "=" * 60)
-        print("EVALUATION SUMMARY")
-        print("=" * 60)
-        print(f"Agent: {args.agent}")
-        print(f"Total metrics: {len(all_results)}")
-        print("=" * 60)
+    # Display results
+    print_results_table(results, f"{args.agent1} vs {args.agent2}")
 
 
 if __name__ == "__main__":
+    expose_modules()
     main()

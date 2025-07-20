@@ -10,6 +10,7 @@ import io
 import chess
 import chess.pgn
 from mllg import TestInfo
+from tqdm import tqdm
 
 import wandb
 from stonefish.env import RandomAgent, StockfishAgent
@@ -95,9 +96,13 @@ def evaluate_agents(
     """Evaluate agent1 vs agent2, with agent1 playing both colors"""
     wins = losses = draws = 0
 
-    for i in range(num_games):
+    # Create progress bar with descriptive text
+    pbar = tqdm(range(num_games), desc="Playing games", unit="game")
+
+    for i in pbar:
         if i < num_games // 2:
             # Agent1 as white
+            pbar.set_description(f"Game {i+1}/{num_games} (Agent1 as white)")
             result, _ = play_game(agent1, agent2)
             if result == "1-0":
                 wins += 1
@@ -107,6 +112,7 @@ def evaluate_agents(
                 draws += 1
         else:
             # Agent1 as black
+            pbar.set_description(f"Game {i+1}/{num_games} (Agent1 as black)")
             result, _ = play_game(agent2, agent1)
             if result == "0-1":
                 wins += 1
@@ -114,6 +120,9 @@ def evaluate_agents(
                 losses += 1
             else:
                 draws += 1
+
+        # Update progress bar postfix with current stats
+        pbar.set_postfix({"wins": wins, "losses": losses, "draws": draws})
 
     return [
         TestInfo(f"against_{opponent_name}_win_rate", wins / num_games),
