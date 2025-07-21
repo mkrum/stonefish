@@ -1,5 +1,4 @@
 # Byte-compiled / optimized / DLL files
-data/*
 *.swp
 __pycache__/
 *.py[cod]
