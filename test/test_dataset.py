@@ -3,14 +3,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from stonefish.convert import board_to_lczero_tensor, lczero_tensor_to_board
-from stonefish.dataset import (
-    ChessData,
-    TTTData,
-    default_collate_fn,
-    single_default_collate_fn,
-)
+from stonefish.dataset import ChessData, default_collate_fn, single_default_collate_fn
 from stonefish.rep import BoardRep, MoveRep
-from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
 
 def test_dataset():
@@ -38,19 +32,6 @@ def test_in_dataloader():
     # Check the shape
     assert board_tensor.shape == torch.Size([8, 75])
     assert move_tensor.shape == torch.Size([8, 3])
-
-
-def test_ttt_dataset():
-    dataset = TTTData("data/ttt_test.csv", TTTBoardRep, TTTMoveRep)
-    board_tensor, move_tensor = dataset[0]
-
-    # Check the type
-    assert isinstance(board_tensor, torch.LongTensor)
-    assert isinstance(move_tensor, torch.LongTensor)
-
-    # Check the shape
-    assert board_tensor.shape == torch.Size([10])
-    assert move_tensor.shape == torch.Size([3])
 
 
 def test_board_to_lczero_conversion():
