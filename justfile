@@ -34,6 +34,11 @@ eval *args:
 train-local *args:
 	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} python -m stonefish.train {{args}}
 
+
+shell:
+	@echo "=== Local Debug Shell ==="
+	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} /bin/bash
+
 # Kubernetes deployment commands
 build-push:
 	@echo "=== Building and pushing multi-platform Docker image ==="
@@ -104,7 +109,7 @@ stop-train:
 	@echo "=== Stopping Training Job ==="
 	kubectl delete job stonefish-training
 
-shell:
+shell-deploy:
 	@echo "=== Debug Shell ==="
 	kubectl delete job stonefish-training --ignore-not-found
 	kubectl apply -f k8s/shell.yaml
