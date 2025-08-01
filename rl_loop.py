@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional
+import torch.optim as optim
 import tqdm
 from fastchessenv import CBoards, RandomChessEnv
 from torch.distributions import Categorical
@@ -29,8 +30,8 @@ def _state_to_tensor(states):
 
 class FakeEnv:
 
-    def __init__(self):
-        self.envs = [RandomChessEnv(1, invert=True) for _ in range(2)]
+    def __init__(self, n):
+        self.envs = [RandomChessEnv(1, invert=True) for _ in range(n)]
 
     def step(self, actions):
         out = []
@@ -51,21 +52,11 @@ class FakeEnv:
         return map(np.concatenate, out)
 
 
-def main():
-
-    model = load_model_from_config("configs/train_convnet_big.yml", "model_3.pth").model
-
-    # Does not work
-    # env = RandomChessEnv(2, invert=True)
-    env = FakeEnv()
-
-    states, mask = env.reset()
+def generate_rollout_batch(env, next_boards_tensor, mask, model, num_steps=16):
 
     tensor = RolloutTensor.empty()
 
-    next_boards_tensor = _state_to_tensor(states)
-
-    for _ in tqdm.tqdm(range(1024)):
+    for _ in tqdm.tqdm(range(num_steps)):
 
         boards_tensor = next_boards_tensor
 
@@ -98,7 +89,51 @@ def main():
             mask_tensor,
         )
 
-        print(tensor.reward[tensor.done])
+    return tensor
+
+
+def main():
+
+    model = load_model_from_config("configs/train_convnet_big.yml", "model_3.pth")
+
+    opt = optim.Adam(model.model.parameters(), lr=1e-3)
+
+    # Does not work
+    env = FakeEnv(4)
+
+    states, mask = env.reset()
+    next_boards_tensor = _state_to_tensor(states)
+
+    for _ in range(100):
+
+        tensor = generate_rollout_batch(
+            env, next_boards_tensor, mask, model.model, num_steps=64
+        )
+
+        print(tensor.done.sum())
+        print(tensor.reward[tensor.done].mean())
+
+        tensor.decay_(0.99)
+
+        opt.zero_grad()
+
+        (
+            flat_state,
+            flat_next_state,
+            flat_action,
+            flat_reward,
+            flat_done,
+            flat_mask,
+        ) = tensor.get_data()
+
+        logits = model.model(flat_state, None)
+
+        sel_logits = logits.gather(1, flat_action)
+
+        policy_loss = -1.0 * torch.mean(flat_reward * sel_logits)
+
+        policy_loss.backward()
+        opt.step()
 
 
 if __name__ == "__main__":
