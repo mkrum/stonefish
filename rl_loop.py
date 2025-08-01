@@ -1,14 +1,17 @@
 import numpy as np
 import torch
+import torch.distributed as dist
 import torch.nn.functional
 import torch.optim as optim
 import tqdm
 from fastchessenv import CBoards, RandomChessEnv
 from torch.distributions import Categorical
+from torch.nn.parallel import DistributedDataParallel
 
 from stonefish.config import expose_modules
 from stonefish.convert import board_to_lczero_tensor
 from stonefish.eval.agent_loader import load_model_from_config
+from stonefish.train.base import cleanup_distributed, setup_distributed
 from stonefish.utils import RolloutTensor
 
 
@@ -96,10 +99,12 @@ def main():
 
     model = load_model_from_config("configs/train_convnet_big.yml", "model_3.pth")
 
-    opt = optim.Adam(model.model.parameters(), lr=1e-3)
+    model.model = DistributedDataParallel(model.model)
+
+    opt = optim.Adam(model.model.parameters(), lr=1e-4)
 
     # Does not work
-    env = FakeEnv(4)
+    env = FakeEnv(1)
 
     states, mask = env.reset()
     next_boards_tensor = _state_to_tensor(states)
@@ -107,8 +112,12 @@ def main():
     for _ in range(100):
 
         tensor = generate_rollout_batch(
-            env, next_boards_tensor, mask, model.model, num_steps=64
+            env, next_boards_tensor, mask, model.model.module, num_steps=128
         )
+
+        dist.barrier()
+
+        tensor.reward[tensor.done & (tensor.reward == 0)] = -1.0
 
         print(tensor.done.sum())
         print(tensor.reward[tensor.done].mean())
@@ -126,6 +135,11 @@ def main():
             flat_mask,
         ) = tensor.get_data()
 
+        completed_mask = (flat_reward != 0).flatten()
+        flat_state = flat_state[completed_mask]
+        flat_action = flat_action[completed_mask]
+        flat_reward = flat_reward[completed_mask]
+
         logits = model.model(flat_state, None)
 
         sel_logits = logits.gather(1, flat_action)
@@ -133,9 +147,13 @@ def main():
         policy_loss = -1.0 * torch.mean(flat_reward * sel_logits)
 
         policy_loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model.model.parameters(), 1.0)
         opt.step()
 
 
 if __name__ == "__main__":
     expose_modules()
+    setup_distributed()
     main()
+    cleanup_distributed()

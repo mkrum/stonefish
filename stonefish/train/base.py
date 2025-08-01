@@ -83,7 +83,8 @@ def setup_distributed():
 
     if world_size > 1:
         dist.init_process_group(backend="nccl" if torch.cuda.is_available() else "gloo")
-        torch.cuda.set_device(local_rank)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(local_rank)
         return local_rank, world_size, True
 
     return 0, 1, False

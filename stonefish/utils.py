@@ -89,9 +89,10 @@ class RolloutTensor:
             new_state, new_action, new_next_state, new_reward, new_done, new_mask
         )
 
-    def decay_(self, gamma, values) -> None:
+    def decay_(self, gamma, values=None) -> None:
 
-        self.reward[:, -1] += ~self.done[:, -1] * gamma * values
+        if values:
+            self.reward[:, -1] += ~self.done[:, -1] * gamma * values
 
         for i in reversed(range(len(self) - 1)):
             self.reward[:, i] = (
