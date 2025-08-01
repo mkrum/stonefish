@@ -5,7 +5,7 @@ Script to convert JSONL centipawn estimates to HuggingFace dataset and upload.
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import tqdm
 from datasets import Dataset
@@ -23,17 +23,34 @@ def read_jsonl(file_path: str) -> List[Dict[str, Any]]:
 
 
 def create_hf_dataset(jsonl_data: List[Dict[str, Any]]) -> Dataset:
-    """Convert JSONL data to HuggingFace Dataset."""
+    """Convert JSONL data to HuggingFace Dataset, separating mates from values."""
     boards = []
     moves = []
     values = []
+    mates = []
 
     for item in jsonl_data:
         boards.append(item["board"])
         moves.append(item["moves"])
-        values.append(item["values"])
 
-    dataset_dict = {"board": boards, "moves": moves, "values": values}
+        # Separate mates from centipawn values
+        item_values: List[Union[int, None]] = []
+        item_mates: List[Union[int, None]] = []
+
+        for value in item["values"]:
+            # Check if this is a mate value (>= 1M or <= -1M)
+            if abs(value) >= 1000000:
+                mate_distance = int(value / 1000000)
+                item_values.append(None)
+                item_mates.append(mate_distance)
+            else:
+                item_values.append(value)
+                item_mates.append(None)
+
+        values.append(item_values)
+        mates.append(item_mates)
+
+    dataset_dict = {"board": boards, "moves": moves, "values": values, "mates": mates}
 
     return Dataset.from_dict(dataset_dict)
 
