@@ -66,12 +66,8 @@ def generate_rollout_batch(env, next_boards_tensor, mask, model, num_steps=16):
         mask = _pad_mask(mask)
         mask_tensor = torch.Tensor(mask)
 
-        logits = []
         with torch.no_grad():
-            for bt in boards_tensor:
-                logits.append(model.forward(bt, None))
-
-        logits = torch.concatenate(logits)
+            logits = model.forward(boards_tensor, None)
 
         legal_logits = logits * mask_tensor + (1 - mask_tensor) * -1e10
 
@@ -104,7 +100,7 @@ def main():
     opt = optim.Adam(model.model.parameters(), lr=1e-4)
 
     # Does not work
-    env = FakeEnv(1)
+    env = FakeEnv(8)
 
     states, mask = env.reset()
     next_boards_tensor = _state_to_tensor(states)
@@ -112,7 +108,7 @@ def main():
     for _ in range(100):
 
         tensor = generate_rollout_batch(
-            env, next_boards_tensor, mask, model.model.module, num_steps=128
+            env, next_boards_tensor, mask, model.model.module, num_steps=32
         )
 
         dist.barrier()
@@ -142,9 +138,14 @@ def main():
 
         logits = model.model(flat_state, None)
 
-        sel_logits = logits.gather(1, flat_action)
+        # Apply mask to logits
+        flat_mask = flat_mask[completed_mask]
+        legal_logits = logits * flat_mask + (1 - flat_mask) * -1e10
 
-        policy_loss = -1.0 * torch.mean(flat_reward * sel_logits)
+        log_probs = torch.log_softmax(legal_logits, dim=1)
+        sel_log_probs = log_probs.gather(1, flat_action).squeeze(1)
+
+        policy_loss = -1.0 * torch.mean(flat_reward * sel_log_probs)
 
         policy_loss.backward()
 
