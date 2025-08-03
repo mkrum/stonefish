@@ -1,17 +1,14 @@
 import numpy as np
 import torch
-import torch.distributed as dist
 import torch.nn.functional
 import torch.optim as optim
 import tqdm
 from fastchessenv import CBoards, RandomChessEnv
 from torch.distributions import Categorical
-from torch.nn.parallel import DistributedDataParallel
 
 from stonefish.config import expose_modules
 from stonefish.convert import board_to_lczero_tensor
 from stonefish.eval.agent_loader import load_model_from_config
-from stonefish.train.base import cleanup_distributed, setup_distributed
 from stonefish.utils import RolloutTensor
 
 
@@ -58,13 +55,14 @@ class FakeEnv:
 def generate_rollout_batch(env, next_boards_tensor, mask, model, num_steps=16):
 
     tensor = RolloutTensor.empty()
+    device = next_boards_tensor.device
 
     for _ in tqdm.tqdm(range(num_steps)):
 
         boards_tensor = next_boards_tensor
 
         mask = _pad_mask(mask)
-        mask_tensor = torch.Tensor(mask)
+        mask_tensor = torch.Tensor(mask).to(device)
 
         with torch.no_grad():
             logits = model.forward(boards_tensor, None)
@@ -75,16 +73,16 @@ def generate_rollout_batch(env, next_boards_tensor, mask, model, num_steps=16):
 
         actions = Categorical(probs).sample()
 
-        next_states, mask, rewards, done = env.step(actions.detach().numpy())
+        next_states, mask, rewards, done = env.step(actions.detach().cpu().numpy())
 
-        next_boards_tensor = _state_to_tensor(next_states)
+        next_boards_tensor = _state_to_tensor(next_states).to(device)
 
         tensor = tensor.add(
             boards_tensor,
             actions,
             next_boards_tensor,
-            torch.Tensor(rewards),
-            torch.Tensor(done),
+            torch.Tensor(rewards).to(device),
+            torch.Tensor(done).to(device),
             mask_tensor,
         )
 
@@ -95,23 +93,30 @@ def main():
 
     model = load_model_from_config("configs/train_convnet_big.yml", "model_3.pth")
 
-    model.model = DistributedDataParallel(model.model)
+    # Use MPS if available (Mac), otherwise CPU
+    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"Using device: {device}")
+    model.model = model.model.to(device)
+
+    # Commented out for local testing
+    # model.model = DistributedDataParallel(model.model)
 
     opt = optim.Adam(model.model.parameters(), lr=1e-4)
 
-    # Does not work
-    env = FakeEnv(8)
+    # Doubled from 8 to compensate for no distributed
+    env = FakeEnv(16)
 
     states, mask = env.reset()
-    next_boards_tensor = _state_to_tensor(states)
+    next_boards_tensor = _state_to_tensor(states).to(device)
 
-    for _ in range(100):
+    for _ in range(1000):
 
         tensor = generate_rollout_batch(
-            env, next_boards_tensor, mask, model.model.module, num_steps=32
+            env, next_boards_tensor, mask, model.model, num_steps=64
         )
 
-        dist.barrier()
+        # Commented out for local testing
+        # dist.barrier()
 
         tensor.reward[tensor.done & (tensor.reward == 0)] = -1.0
 
@@ -135,11 +140,11 @@ def main():
         flat_state = flat_state[completed_mask]
         flat_action = flat_action[completed_mask]
         flat_reward = flat_reward[completed_mask]
+        flat_mask = flat_mask[completed_mask]
 
         logits = model.model(flat_state, None)
 
         # Apply mask to logits
-        flat_mask = flat_mask[completed_mask]
         legal_logits = logits * flat_mask + (1 - flat_mask) * -1e10
 
         log_probs = torch.log_softmax(legal_logits, dim=1)
@@ -155,6 +160,7 @@ def main():
 
 if __name__ == "__main__":
     expose_modules()
-    setup_distributed()
+    # Commented out for local testing
+    # setup_distributed()
     main()
-    cleanup_distributed()
+    # cleanup_distributed()
