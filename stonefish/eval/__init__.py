@@ -1,7 +1,6 @@
 from stonefish.eval.base import (
     ChessEvalContext,
     EvalContext,
-    TTTEvalContext,
     eval_against_random,
     eval_model,
     get_pgns,
@@ -13,7 +12,6 @@ __all__ = [
     "eval_model",
     "seq_eval_model",
     "EvalContext",
-    "TTTEvalContext",
     "ChessEvalContext",
     "get_pgns",
     "eval_against_random",
