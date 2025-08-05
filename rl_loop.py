@@ -1,3 +1,5 @@
+import gc
+
 import numpy as np
 import torch
 import torch.nn.functional
@@ -6,6 +8,7 @@ import tqdm
 from fastchessenv import CBoards, RandomChessEnv
 from torch.distributions import Categorical
 
+import wandb
 from stonefish.config import expose_modules
 from stonefish.convert import board_to_lczero_tensor
 from stonefish.eval.agent_loader import load_model_from_config
@@ -86,10 +89,21 @@ def generate_rollout_batch(env, next_boards_tensor, mask, model, num_steps=16):
             mask_tensor,
         )
 
-    return tensor
+    return tensor, next_boards_tensor, mask
 
 
 def main():
+    # Initialize wandb
+    wandb.init(
+        project="stonefish-rl",
+        config={
+            "lr": 1e-4,
+            "num_envs": 32,
+            "num_steps": 128,
+            "gamma": 0.99,
+            "device": "mps" if torch.backends.mps.is_available() else "cpu",
+        },
+    )
 
     model = load_model_from_config("configs/train_convnet_big.yml", "model_3.pth")
 
@@ -103,16 +117,15 @@ def main():
 
     opt = optim.Adam(model.model.parameters(), lr=1e-4)
 
-    # Doubled from 8 to compensate for no distributed
-    env = FakeEnv(16)
+    env = FakeEnv(48)
 
     states, mask = env.reset()
     next_boards_tensor = _state_to_tensor(states).to(device)
 
-    for _ in range(1000):
+    for step in range(10000):
 
-        tensor = generate_rollout_batch(
-            env, next_boards_tensor, mask, model.model, num_steps=64
+        tensor, next_boards_tensor, mask = generate_rollout_batch(
+            env, next_boards_tensor, mask, model.model, num_steps=128
         )
 
         # Commented out for local testing
@@ -120,8 +133,14 @@ def main():
 
         tensor.reward[tensor.done & (tensor.reward == 0)] = -1.0
 
-        print(tensor.done.sum())
-        print(tensor.reward[tensor.done].mean())
+        games_completed = tensor.done.sum().item()
+        avg_reward = (
+            tensor.reward[tensor.done].mean().item() if games_completed > 0 else 0.0
+        )
+
+        print(
+            f"Step {step}: {games_completed} games completed, avg reward: {avg_reward:.3f}"
+        )
 
         tensor.decay_(0.99)
 
@@ -142,6 +161,10 @@ def main():
         flat_reward = flat_reward[completed_mask]
         flat_mask = flat_mask[completed_mask]
 
+        if len(flat_state) == 0:
+            print("No completed games, skipping update")
+            continue
+
         logits = model.model(flat_state, None)
 
         # Apply mask to logits
@@ -154,8 +177,47 @@ def main():
 
         policy_loss.backward()
 
-        torch.nn.utils.clip_grad_norm_(model.model.parameters(), 1.0)
         opt.step()
+
+        # Log to wandb
+        wandb.log(
+            {
+                "step": step,
+                "games_completed": games_completed,
+                "avg_reward": avg_reward,
+                "policy_loss": policy_loss.item(),
+                "completed_samples": len(flat_state),
+                "wins": (tensor.reward[tensor.done] == 1).sum(),
+                "losses": (tensor.reward[tensor.done] == -1).sum(),
+                "avg_log_prob": sel_log_probs.mean().item(),
+            }
+        )
+
+        # Save checkpoint every 100 steps
+        if step % 100 == 0:
+            checkpoint = {
+                "step": step,
+                "model_state_dict": model.model.state_dict(),
+                "optimizer_state_dict": opt.state_dict(),
+                "avg_reward": avg_reward,
+            }
+            torch.save(checkpoint, f"rl_checkpoint_{step}.pth")
+            print(f"Saved checkpoint at step {step}")
+
+        # Explicitly delete tensors to free memory
+        del (
+            tensor,
+            flat_state,
+            flat_action,
+            flat_reward,
+            flat_mask,
+            logits,
+            log_probs,
+            sel_log_probs,
+        )
+
+        gc.collect()
+        torch.mps.empty_cache()
 
 
 if __name__ == "__main__":
