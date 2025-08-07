@@ -77,6 +77,16 @@ def main():
     # Display results
     print_results_table(results, f"{args.agent1} vs {args.agent2}")
 
+    # Extract wins/losses from results
+    wins = int(results[0].loss * args.games)  # win_rate * num_games
+    losses = int(results[1].loss * args.games)  # loss_rate * num_games
+    draws = args.games - wins - losses
+
+    # Clear summary
+    print(f"\n{args.agent1}: {wins} wins")
+    print(f"{args.agent2}: {losses} wins")
+    print(f"Draws: {draws}")
+
 
 if __name__ == "__main__":
     expose_modules()
