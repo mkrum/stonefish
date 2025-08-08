@@ -5,21 +5,19 @@ Script to convert JSONL centipawn estimates to HuggingFace dataset and upload.
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Generator, List, Union
 
 import tqdm
 from datasets import Dataset
 
 
-def read_jsonl(file_path: str) -> List[Dict[str, Any]]:
+def read_jsonl(file_path: str) -> Generator[Dict[str, Any], None, None]:
     """Read JSONL file and return list of dictionaries."""
-    data = []
     with open(file_path, "r") as f:
         for line in tqdm.tqdm(f):
             line = line.strip()
             if line:
-                data.append(json.loads(line))
-    return data
+                yield json.loads(line)
 
 
 def create_hf_dataset(jsonl_data: List[Dict[str, Any]]) -> Dataset:
@@ -58,9 +56,6 @@ def create_hf_dataset(jsonl_data: List[Dict[str, Any]]) -> Dataset:
 def upload_to_hf(dataset: Dataset, repo_name: str):
     """Upload dataset to HuggingFace Hub."""
 
-    dataset.push_to_hub(repo_name, private=False)
-    print(f"Dataset uploaded to: https://huggingface.co/datasets/{repo_name}")
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -77,17 +72,19 @@ def main():
     if not Path(args.jsonl_file).exists():
         raise ValueError(f"Error: File {args.jsonl_file} not found")
 
-    print(f"Reading JSONL file: {args.jsonl_file}")
-    jsonl_data = read_jsonl(args.jsonl_file)
-    print(f"Loaded {len(jsonl_data)} records")
+    batch = []
+    index = 0
+    for d in read_jsonl(args.jsonl_file):
+        batch.append(d)
 
-    print("Converting to HuggingFace dataset...")
-    dataset = create_hf_dataset(jsonl_data)
-    print(f"Dataset created with {len(dataset)} rows")
-    print(f"Features: {dataset.features}")
+        if len(batch) == 1000000:
+            df = create_hf_dataset(batch)
+            df.push_to_hub(args.repo_name, private=False, data_dir=f"data_{index}")
+            index += 1
+            batch = []
 
-    print(f"Uploading to HuggingFace Hub: {args.repo_name}")
-    upload_to_hf(dataset, args.repo_name)
+    df = create_hf_dataset(batch)
+    df.push_to_hub(args.repo_name, private=False, append=True)
 
 
 if __name__ == "__main__":
