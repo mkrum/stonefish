@@ -1,4 +1,6 @@
 import argparse
+import random
+from pathlib import Path
 
 import datasets
 from datasets import disable_caching
@@ -25,13 +27,13 @@ def process_single_game(game_data):
 
         if idx % 2 == 0 and use_white:
             results.append(move_data)
-        elif use_black:
+        elif idx % 2 != 0 and use_black:
             results.append(move_data)
 
     return results
 
 
-def process_batch(batch):
+def process_batch(batch, with_shuffle=True):
     """Process a batch of games for use with dataset.map(batched=True)"""
     all_boards = []
     all_moves = []
@@ -48,6 +50,16 @@ def process_batch(batch):
             # Add all other metadata
             for k in batch.keys():
                 all_metadata[k].append(result[k])
+
+    # Shuffle within the batch
+    if with_shuffle and len(all_boards) > 0:
+        indices = list(range(len(all_boards)))
+        random.shuffle(indices)
+
+        all_boards = [all_boards[i] for i in indices]
+        all_moves = [all_moves[i] for i in indices]
+        for k in all_metadata:
+            all_metadata[k] = [all_metadata[k][i] for i in indices]
 
     # Return flattened batch
     return {"board": all_boards, "move": all_moves, **all_metadata}
@@ -85,38 +97,48 @@ def parse_year_month(
     """Load dataset upfront and process with parallel map"""
     data_dir = f"data/year={year}/month={month:02}"
 
+    log_path = Path("count_log.csv")
+
     print(f"Loading dataset for {year}-{month:02}...")
     # Load without streaming to enable num_proc
     data = datasets.load_dataset("Lichess/standard-chess-games", data_dir=data_dir)
 
-    print(f"Processing {len(data['train'])} games with {num_proc} processes...")
+    total_games = len(data["train"])
+    print(f"Processing {total_games} games with {num_proc} processes...")
     # Process with batched map and multiprocessing
     filtered = data["train"].filter(
         game_filter, num_proc=num_proc, desc="Filtering games"
     )
-    print(f"{len(filtered)} valid games...")
+    valid_games = len(filtered)
+    print(f"{valid_games} valid games...")
+
+    # Set random seed for reproducible shuffling across workers
+    random.seed(123)
 
     # Process with batched map and multiprocessing
+    # Shuffling happens within each batch during processing
     processed = filtered.map(
-        process_batch,
+        lambda batch: process_batch(batch, with_shuffle=True),
         batched=True,
         batch_size=batch_size,
         num_proc=num_proc,
-        desc="Processing games",
+        desc="Processing and shuffling games",
     )
 
-    # Shuffle
-    processed = processed.shuffle(seed=123)
-
-    print(f"Pushing {len(processed)} positions to hub...")
+    total_moves = len(processed)
+    print(f"Pushing {total_moves} positions to hub...")
     processed.push_to_hub(target_repo_name, private=False, data_dir=data_dir)
     print(f"Completed {year}-{month:02}")
     data.cleanup_cache_files()
+
+    with open(log_path, "a") as log_file:
+        log_file.write(f"{year},{month},{total_games},{valid_games},{total_moves}\n")
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
+
     parser.add_argument("year", type=int, help="Year to process")
     parser.add_argument("month", type=int, help="Month to process")
     args = parser.parse_args()
