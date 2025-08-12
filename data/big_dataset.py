@@ -6,7 +6,7 @@ import datasets
 from datasets import disable_caching
 from pull_data import handle_movetext
 
-repo_name = "mkrum/LichessParsed"
+repo_name = "mkrum/LichessParsedBlitz"
 
 
 def process_single_game(game_data):
@@ -78,18 +78,21 @@ def game_filter(game_data, elo_min: int = 1999):
 
     one_side_good_enough = (white_elo > elo_min) or (black_elo > elo_min)
 
-    is_classical = (
-        "Classical" in game_data["Event"] or "Correspondence" in game_data["Event"]
+    is_long_enough = (
+        "Classical" in game_data["Event"]
+        or "Correspondence" in game_data["Event"]
+        or "Blitz" in game_data["Event"]
     )
     ended_normally = game_data["Termination"] == "Normal"
 
-    return one_side_good_enough and is_classical and ended_normally
+    return one_side_good_enough and is_long_enough and ended_normally
 
 
 def parse_year_month(
     target_repo_name: str,
     year: int,
     month: int,
+    log_file: str = "count_log.csv",
     elo_min: int = 1999,
     batch_size: int = 1000,
     num_proc: int = 8,
@@ -97,7 +100,7 @@ def parse_year_month(
     """Load dataset upfront and process with parallel map"""
     data_dir = f"data/year={year}/month={month:02}"
 
-    log_path = Path("count_log.csv")
+    log_path = Path(log_file)
 
     print(f"Loading dataset for {year}-{month:02}...")
     # Load without streaming to enable num_proc
@@ -131,8 +134,10 @@ def parse_year_month(
     print(f"Completed {year}-{month:02}")
     data.cleanup_cache_files()
 
-    with open(log_path, "a") as log_file:
-        log_file.write(f"{year},{month},{total_games},{valid_games},{total_moves}\n")
+    with open(log_path, "a") as log_file_obj:
+        log_file_obj.write(
+            f"{year},{month},{total_games},{valid_games},{total_moves}\n"
+        )
 
 
 if __name__ == "__main__":
@@ -141,7 +146,17 @@ if __name__ == "__main__":
 
     parser.add_argument("year", type=int, help="Year to process")
     parser.add_argument("month", type=int, help="Month to process")
+    parser.add_argument(
+        "--log-file", type=str, default="count_log.csv", help="Path to log file"
+    )
     args = parser.parse_args()
 
     disable_caching()
-    parse_year_month(repo_name, args.year, args.month, num_proc=8, batch_size=500)
+    parse_year_month(
+        repo_name,
+        args.year,
+        args.month,
+        log_file=args.log_file,
+        num_proc=8,
+        batch_size=500,
+    )
