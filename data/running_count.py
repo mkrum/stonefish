@@ -1,7 +1,7 @@
 import pandas as pd
 
 df = pd.read_csv(
-    "./count_log.csv", header=None, names=["year", "month", "games", "valid", "moves"]
+    "./with_blitz.csv", header=None, names=["year", "month", "games", "valid", "moves"]
 )
 running = df[["games", "valid", "moves"]].sum()
 print(running)
