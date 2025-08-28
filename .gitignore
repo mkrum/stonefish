@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+*.pth
 *.swp
 __pycache__/
 *.py[cod]
