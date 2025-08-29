@@ -10,8 +10,8 @@ pretrain_context: !PreTrainContext()
         agent_config: !ModelChessAgent
             temperature: 1.0
             sample: true
-        games_vs_random: 100
-        games_vs_stockfish: 100
+        games_vs_random: 1
+        games_vs_stockfish: 1
         stockfish_depth: 1
 
     train_dl: !DataLoader()

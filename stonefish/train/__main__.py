@@ -33,6 +33,10 @@ if __name__ == "__main__":
             device = torch.device(f"cuda:{local_rank}")
         else:
             device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        # Use Metal Performance Shaders (Apple Silicon GPU) if available
+        device = torch.device("mps")
+        print("Using MPS (Apple Silicon GPU) for training")
     else:
         device = torch.device("cpu")
 
