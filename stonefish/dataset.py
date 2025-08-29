@@ -6,8 +6,9 @@ import chess
 import datasets
 import torch
 from fastchessenv import CMove
+from huggingface_hub import HfApi
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 
 from stonefish.ttt import TTTBoardRep, TTTMoveRep
 
@@ -97,8 +98,18 @@ class TTTData(ChessData):
         return board_tokens.to_tensor(), move.to_tensor()
 
 
-class ChessDataset(Dataset):
-    """Unified chess dataset using tokenizer-based board representation"""
+class ChessDataset:
+    """Unified chess dataset that can work in streaming or regular mode"""
+
+    def __new__(cls, *args, streaming=False, **kwargs):
+        if streaming:
+            return StreamingChessDataset(*args, streaming=streaming, **kwargs)
+        else:
+            return StandardChessDataset(*args, streaming=streaming, **kwargs)
+
+
+class StandardChessDataset(Dataset):
+    """Standard chess dataset for non-streaming data"""
 
     def __init__(
         self,
@@ -106,14 +117,15 @@ class ChessDataset(Dataset):
         board_tokenizer=None,
         sample_size=None,
         dataset_name="mkrum/ParsedChess",
+        streaming=False,
     ):
+        self.streaming = False
         if sample_size:
             self.data = datasets.load_dataset(dataset_name)[split].select(
                 range(sample_size)
             )
         else:
-            self.data = datasets.load_dataset(dataset_name)[split]
-
+            self.data = datasets.load_dataset(dataset_name, streaming=False)[split]
         self.board_tokenizer = board_tokenizer
 
     def __getitem__(self, idx):
@@ -125,3 +137,38 @@ class ChessDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+
+class StreamingChessDataset(IterableDataset):
+    """Streaming chess dataset for large-scale data"""
+
+    def __init__(
+        self,
+        split,
+        board_tokenizer=None,
+        sample_size=None,
+        dataset_name="mkrum/ParsedChess",
+        streaming=True,
+    ):
+        self.streaming = True
+        if sample_size:
+            raise ValueError("Can't use sample_size with streaming dataset")
+
+        # Get dataset info for length
+        api = HfApi()
+        info = api.dataset_info(dataset_name)
+        # This is basically hardcoded for mkrum/LichessParsedBlitz
+        self.n_examples = info.cardData["dataset_info"]["splits"][0]["num_examples"]
+        self.data = datasets.load_dataset(dataset_name, streaming=True)[split]
+        self.board_tokenizer = board_tokenizer
+
+    def __iter__(self):
+        """Iterator for streaming datasets"""
+        for row in self.data:
+            board = chess.Board(row["board"])
+            board_tensor = self.board_tokenizer.from_board(board)
+            move = CMove.from_str(row["move"]).to_int()
+            yield board_tensor, torch.tensor(move).long()
+
+    def __len__(self):
+        return self.n_examples

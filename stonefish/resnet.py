@@ -51,7 +51,7 @@ class ConvResBlock(nn.Module):
 class ChessResNet(nn.Module):
     """Standard ResNet model for chess using flat board representation"""
 
-    def __init__(self, input_dim=69, hidden_dim=4096, num_blocks=8, output_dim=5700):
+    def __init__(self, input_dim=69, hidden_dim=4096, num_blocks=8, output_dim=5632):
         super(ChessResNet, self).__init__()
 
         # Tokenizers

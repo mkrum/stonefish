@@ -17,9 +17,11 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
+            streaming: true
+            dataset_name: mkrum/LichessParsedBlitz
         batch_size: 128
-        shuffle: True
-        drop_last: True
+        shuffle: False
+        drop_last: False
         collate_fn: null
         num_workers: 1
         pin_memory: false
