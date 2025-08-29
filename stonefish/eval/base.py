@@ -8,7 +8,7 @@ import tqdm
 from mllg import TestInfo, ValidationInfo
 
 import wandb
-from stonefish.env import RandomAgent, StockfishAgent, TTTEnvTwoPlayer, chess_rollout
+from stonefish.env import RandomAgent, StockfishAgent, chess_rollout
 from stonefish.utils import ttt_state_to_str
 
 
@@ -37,17 +37,6 @@ class EvalContext:
     def __call__(self, model, batch_idx):
         win_per = eval_against_random(model, self.eval_env, n=100)
         return ValidationInfo(0, batch_idx, [TestInfo("WinPer", win_per)])
-
-
-@dataclass
-class TTTEvalContext(EvalContext):
-    # Should be Two player
-    eval_env: Any = TTTEnvTwoPlayer(1)
-
-    def __call__(self, model, batch_idx):
-        sample_games = ttt_walkthrough(model, self.eval_env, n=2)
-        win_info = eval_against_random(model, self.eval_env, n=100)
-        return ValidationInfo(0, batch_idx, [win_info, sample_games])
 
 
 @dataclass
