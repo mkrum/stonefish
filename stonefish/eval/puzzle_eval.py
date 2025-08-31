@@ -12,6 +12,8 @@ import datasets
 import glicko2
 import numpy as np
 import pandas as pd
+import wandb
+from mllg import TestInfo
 
 import stonefish.config
 from stonefish.types import ChessAgent
@@ -241,6 +243,172 @@ def evaluate_puzzles(
             player.update_player(player_ratings, stds, wins)
 
     return pd.DataFrame([r.__dict__ for r in all_results])
+
+
+def evaluate_puzzle_by_rating_brackets(
+    agent: ChessAgent,
+    dataset: datasets.Dataset,
+    puzzles_per_bracket: int = 100,
+) -> Dict[str, float]:
+    """
+    Evaluate agent on puzzles from fixed rating brackets
+
+    Args:
+        agent: Chess agent to evaluate
+        dataset: Lichess puzzles dataset
+        puzzles_per_bracket: Number of puzzles to sample from each bracket
+
+    Returns:
+        Dictionary with accuracy for each rating bracket
+    """
+    # Define rating brackets
+    rating_brackets = [
+        (0, 500),
+        (500, 1000),
+        (1000, 1500),
+        (1500, 2000),
+        (2000, 2500),
+        (2500, 3000),
+    ]
+
+    results = {}
+
+    for min_rating, max_rating in rating_brackets:
+        # Filter dataset for this bracket
+        bracket_data = dataset.filter(
+            lambda x, min_r=min_rating, max_r=max_rating: min_r <= x["Rating"] < max_r
+        )
+
+        if len(bracket_data) == 0:
+            continue
+
+        # Sample puzzles from this bracket
+        num_to_sample = min(puzzles_per_bracket, len(bracket_data))
+        indices = np.random.choice(len(bracket_data), num_to_sample, replace=False)
+        sampled_puzzles = [bracket_data[int(i)] for i in indices]
+
+        # Evaluate on these puzzles
+        bracket_results = []
+        for puzzle in sampled_puzzles:
+            puzzle_results = evaluate_puzzle(agent, puzzle)
+            puzzle_solved = all(r.is_correct for r in puzzle_results)
+            bracket_results.append(puzzle_solved)
+
+        # Calculate accuracy for this bracket
+        bracket_accuracy = np.mean(bracket_results)
+        bracket_name = f"{min_rating}-{max_rating}"
+        results[bracket_name] = bracket_accuracy
+
+    return results
+
+
+def _puzzle_eval_fn(
+    model, epoch, agent_config, dataset, num_puzzles, warmup_puzzles, batch_size
+):
+    """Helper function for training_puzzle_eval"""
+    # Create agent from model using config
+    agent = agent_config(model=model)
+
+    # Evaluate on puzzles
+    results_df = evaluate_puzzles(
+        agent=agent,
+        dataset=dataset,
+        num_puzzles=num_puzzles,
+        warmup_puzzles=warmup_puzzles,
+        batch_size=batch_size,
+    )
+
+    # Calculate final rating
+    final_rating = results_df["player_rating_estimate"].iloc[-1]
+    final_rd = results_df["player_rd_estimate"].iloc[-1]
+
+    # Calculate accuracy metrics
+    move_accuracy = results_df["is_correct"].mean()
+    puzzle_completion = results_df.groupby("puzzle_id")["is_correct"].all().mean()
+
+    # Create metrics for wandb
+    wandb_metrics = {
+        "eval/puzzle_rating": final_rating,
+        "eval/puzzle_rating_deviation": final_rd,
+        "eval/puzzle_move_accuracy": move_accuracy,
+        "eval/puzzle_completion_rate": puzzle_completion,
+    }
+
+    # Log to wandb
+    wandb.log(wandb_metrics)
+
+    # Also return as TestInfo objects for compatibility
+    return [
+        TestInfo(loss_type="puzzle_rating", loss=final_rating),
+        TestInfo(loss_type="puzzle_move_accuracy", loss=move_accuracy),
+    ]
+
+
+def _puzzle_bracket_eval_fn(model, epoch, agent_config, dataset, puzzles_per_bracket):
+    """Helper function for training_puzzle_eval_by_rating"""
+    # Create agent from model using config
+    agent = agent_config(model=model)
+
+    # Evaluate on rating brackets
+    bracket_results = evaluate_puzzle_by_rating_brackets(
+        agent=agent,
+        dataset=dataset,
+        puzzles_per_bracket=puzzles_per_bracket,
+    )
+
+    # Create metrics for wandb
+    wandb_metrics = {}
+    test_infos = []
+
+    for bracket_name, accuracy in bracket_results.items():
+        wandb_metrics[f"eval/puzzle_acc_{bracket_name}"] = accuracy
+        test_infos.append(
+            TestInfo(loss_type=f"puzzle_acc_{bracket_name}", loss=accuracy)
+        )
+
+    # Calculate overall average
+    if test_infos:
+        overall_avg = np.mean([info.loss for info in test_infos])
+        wandb_metrics["eval/puzzle_acc_average"] = overall_avg
+
+    # Log to wandb
+    wandb.log(wandb_metrics)
+
+    return test_infos
+
+
+def training_puzzle_eval(
+    agent_config,
+    num_puzzles: int = 500,
+    warmup_puzzles: int = 100,
+    batch_size: int = 50,
+):
+    """Creates a training-compatible puzzle evaluation function"""
+
+    # Load dataset once
+    dataset = datasets.load_dataset("Lichess/chess-puzzles")["train"]
+    dataset = dataset.filter(lambda x: x["Popularity"] > 0)
+
+    # Return a lambda that calls the helper function with the dataset
+    return lambda model, epoch: _puzzle_eval_fn(
+        model, epoch, agent_config, dataset, num_puzzles, warmup_puzzles, batch_size
+    )
+
+
+def training_puzzle_eval_by_rating(
+    agent_config,
+    puzzles_per_bracket: int = 100,
+):
+    """Creates a training-compatible puzzle evaluation function for rating brackets"""
+
+    # Load dataset once
+    dataset = datasets.load_dataset("Lichess/chess-puzzles")["train"]
+    dataset = dataset.filter(lambda x: x["Popularity"] > 0)
+
+    # Return a lambda that calls the helper function with the dataset
+    return lambda model, epoch: _puzzle_bracket_eval_fn(
+        model, epoch, agent_config, dataset, puzzles_per_bracket
+    )
 
 
 def main():
