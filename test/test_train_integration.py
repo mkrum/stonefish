@@ -6,10 +6,10 @@ import os
 import tempfile
 
 import torch
+import wandb
 from mllg import LogWriter
 from torch.utils.data import DataLoader, TensorDataset
 
-import wandb
 from stonefish.eval.tensor import eval_model_tensors
 from stonefish.resnet import ChessResNet
 from stonefish.train import PreTrainContext, train_step

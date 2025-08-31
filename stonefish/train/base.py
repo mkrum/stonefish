@@ -7,12 +7,12 @@ import torch
 import torch.distributed as dist
 import torch.nn
 import torch.nn.functional as functional
+import wandb
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
-import wandb
 from stonefish.mask import MoveMask
 
 # Set up logger

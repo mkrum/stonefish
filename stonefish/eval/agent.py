@@ -9,10 +9,10 @@ import io
 
 import chess
 import chess.pgn
+import wandb
 from mllg import TestInfo
 from tqdm import tqdm
 
-import wandb
 from stonefish.env import RandomAgent, StockfishAgent
 from stonefish.eval.base import _create_pgn_html
 from stonefish.types import ChessAgent

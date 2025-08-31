@@ -5,9 +5,9 @@ from typing import Any
 import numpy as np
 import torch
 import tqdm
+import wandb
 from mllg import TestInfo, ValidationInfo
 
-import wandb
 from stonefish.env import RandomAgent, StockfishAgent, chess_rollout
 from stonefish.utils import ttt_state_to_str
 

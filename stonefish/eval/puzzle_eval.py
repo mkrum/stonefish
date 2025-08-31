@@ -5,7 +5,7 @@ Adapted from LichessEval for stonefish models
 
 import bisect
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import chess
 import datasets
@@ -43,20 +43,29 @@ class LichessPuzzleSampler:
         self.ratings = self.data["Rating"]
         self.seen = set()
 
-    def sample(self, target: int):
+    def sample(self, target: int, size: int = 1):
         idx = bisect.bisect_left(self.ratings, target)
 
-        window = len(self.seen) + 10
+        window = len(self.seen) + 10 * size
         start = max(0, idx - window)
         end = min(len(self.data), idx + window)
 
         sample_range = list(range(start, end))
         sample_range = list(filter(lambda x: int(x) not in self.seen, sample_range))
 
-        sample_idx = int(np.random.choice(sample_range))
-        self.seen.add(sample_idx)
+        sample_indices = np.random.choice(
+            sample_range, size=min(size, len(sample_range)), replace=False
+        )
+        for idx in sample_indices:
+            self.seen.add(int(idx))
+        return [self.data[int(idx)] for idx in sample_indices]
 
-        return self.data[sample_idx]
+    def random_sample(self, size):
+        idxes = np.random.choice(len(self.data), size, replace=False)
+        for idx in idxes:
+            self.seen.add(int(idx))
+
+        return [self.data[int(idx)] for idx in idxes]
 
 
 def evaluate_puzzle(
@@ -140,6 +149,7 @@ def evaluate_puzzles(
     dataset: datasets.Dataset,
     num_puzzles: Optional[int] = None,
     batch_size: int = 10,
+    warmup_puzzles: int = 2000,
 ) -> pd.DataFrame:
     """
     Evaluate an agent on puzzles using adaptive selection
@@ -148,6 +158,7 @@ def evaluate_puzzles(
         agent: Chess agent to evaluate
         dataset: Lichess puzzles dataset
         num_puzzles: Number of puzzles to evaluate (None for 100)
+        warmup_puzzles: Number of random puzzles for initial rating estimate
 
     Returns:
         DataFrame with evaluation results
@@ -157,48 +168,77 @@ def evaluate_puzzles(
 
     # Initialize sampler and Glicko2 player
     sampler = LichessPuzzleSampler(dataset)
-    player = glicko2.Player(1500, 200, 0.06)
+    player = glicko2.Player(1500, 200, 0.04)
 
-    batch = []
-    batch_size = 10
+    batch: List[Tuple[int, int, int]] = []
+    batch_size = 100
 
     all_results = []
+
+    # Warmup phase with random puzzles
+    if warmup_puzzles > 0:
+        print(f"Warmup phase: evaluating {warmup_puzzles} random puzzles...")
+        warmup_batch = sampler.random_sample(warmup_puzzles)
+
+        warmup_results = []
+        for puzzle in warmup_batch:
+            puzzle_results = evaluate_puzzle(agent, puzzle)
+            puzzle_solved = all(r.is_correct for r in puzzle_results)
+            warmup_results.append((puzzle["Rating"], 100, 1 if puzzle_solved else 0))
+
+            # Store results
+            for result in puzzle_results:
+                result.player_rating_estimate = player.rating
+                result.player_rd_estimate = player.rd
+                all_results.append(result)
+
+        ratings, rds, results = zip(*warmup_results, strict=False)
+        player.update_player(ratings, rds, results)
+        print(f"After warmup: Rating = {player.rating:.0f} ± {player.rd:.0f}")
 
     print(
         f"\nStarting adaptive puzzle evaluation (initial rating: {player.rating:.0f})"
     )
 
-    for puzzle_num in range(num_puzzles):
-        # Sample puzzle near current rating
-        puzzle = sampler.sample(int(player.rating))
+    remaining_puzzles = num_puzzles - warmup_puzzles
+    puzzles_done = 0
 
-        # Evaluate puzzle
-        puzzle_results = evaluate_puzzle(agent, puzzle)
+    while puzzles_done < remaining_puzzles:
+        # Sample a batch of puzzles near current rating
+        batch_to_sample = min(batch_size, remaining_puzzles - puzzles_done)
+        puzzle_batch = sampler.sample(int(player.rating), size=batch_to_sample)
 
-        # Check if fully solved
-        puzzle_solved = all(r.is_correct for r in puzzle_results)
+        batch = []
+        for puzzle in puzzle_batch:
+            # Evaluate puzzle
+            puzzle_results = evaluate_puzzle(agent, puzzle)
 
-        # Update rating
-        puzzle_rating = puzzle["Rating"]
-        batch.append((puzzle_rating, 150, 1 if puzzle_solved else 0))
+            # Check if fully solved
+            puzzle_solved = all(r.is_correct for r in puzzle_results)
 
-        if len(batch) == batch_size:
+            # Add to batch
+            puzzle_rating = puzzle["Rating"]
+            batch.append((puzzle_rating, 50, 1 if puzzle_solved else 0))
+
+            # Store results with rating estimate
+            for result in puzzle_results:
+                result.player_rating_estimate = player.rating
+                result.player_rd_estimate = player.rd
+                all_results.append(result)
+
+            puzzles_done += 1
+
+            # Progress update
+            if puzzles_done % batch_size == 0:
+                print(
+                    f"Progress: {warmup_puzzles + puzzles_done}/{num_puzzles}, "
+                    f"Rating: {player.rating:.0f} ± {player.rd:.0f}"
+                )
+
+        # Update rating after batch
+        if batch:
             player_ratings, stds, wins = zip(*batch, strict=False)
             player.update_player(player_ratings, stds, wins)
-            batch = []
-
-        # Store results with rating estimate
-        for result in puzzle_results:
-            result.player_rating_estimate = player.rating
-            result.player_rd_estimate = player.rd
-            all_results.append(result)
-
-        # Progress update
-        if (puzzle_num + 1) % 10 == 0:
-            print(
-                f"Progress: {puzzle_num + 1}/{num_puzzles}, "
-                f"Rating: {player.rating:.0f} ± {player.rd:.0f}"
-            )
 
     return pd.DataFrame([r.__dict__ for r in all_results])
 

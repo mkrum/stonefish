@@ -5,10 +5,10 @@ import torch
 import torch.nn.functional
 import torch.optim as optim
 import tqdm
+import wandb
 from fastchessenv import CBoards, RandomChessEnv
 from torch.distributions import Categorical
 
-import wandb
 from stonefish.config import expose_modules
 from stonefish.convert import board_to_lczero_tensor
 from stonefish.eval.agent_loader import load_model_from_config
