@@ -768,6 +768,15 @@ wheels = [
 ]
 
 [[package]]
+name = "glicko2"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c7/10/afe6be71c21b081aabf97ff2d0d4bd1c9aff5ef896e07f8a433a13376e7a/glicko2-2.1.0.tar.gz", hash = "sha256:1b15e1ff053b3ef48d395923cae4ea95fe6343cc1c6e1ba3b038a6f67a3bf5b4", size = 4056, upload-time = "2024-01-18T19:51:37.945Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/5e/31b3d0e60249dc8c44bee7147ff2c00d04af074d836aa477262b7e194287/glicko2-2.1.0-py2.py3-none-any.whl", hash = "sha256:62decb437097a8326e6ae8ac5fd2ab47577bab3975c3621cef317f09d58a62bb", size = 5337, upload-time = "2024-01-18T20:04:43.229Z" },
+]
+
+[[package]]
 name = "hf-xet"
 version = "1.1.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2600,6 +2609,7 @@ dependencies = [
     { name = "chessplotlib" },
     { name = "datasets" },
     { name = "fastchessenv" },
+    { name = "glicko2" },
     { name = "matplotlib" },
     { name = "mllg" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -2637,6 +2647,7 @@ requires-dist = [
     { name = "chessplotlib" },
     { name = "datasets" },
     { name = "fastchessenv" },
+    { name = "glicko2", specifier = ">=2.1.0" },
     { name = "isort", marker = "extra == 'dev'" },
     { name = "matplotlib" },
     { name = "mllg" },
