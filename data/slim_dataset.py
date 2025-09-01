@@ -1,14 +1,12 @@
 #!/usr/bin/env python
 """
-Create a slimmed down dataset with only board and move columns
-Process year/month by year/month to avoid disk space issues
+Fast parallel version - process multiple months simultaneously
 """
 
 import argparse
-import shutil
+import multiprocessing as mp
 import time
-from pathlib import Path
-from typing import Any, Dict, List
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import datasets
 from datasets import disable_caching
@@ -17,205 +15,141 @@ target_repo = "mkrum/OneBillionMoves"
 source_repo = "mkrum/LichessParsedBlitz"
 
 
-def process_year_month(year: int, month: int, dry_run: bool = False):
-    """Process one year/month of data"""
-
+def process_single_month(year_month_tuple):
+    """Process one year/month of data - designed for parallel execution"""
+    year, month = year_month_tuple
     data_dir = f"data/year={year}/month={month:02}"
-    print(f"\n{'='*60}")
-    print(f"Processing {year}-{month:02}")
-    print("=" * 60)
-
-    # Check disk space before starting
-    disk_usage = shutil.disk_usage("/")
-    free_gb = disk_usage.free / (1024**3)
-    print(f"Free disk space: {free_gb:.1f} GB")
-
-    if free_gb < 50:  # Need at least 50GB free
-        print(f"WARNING: Low disk space ({free_gb:.1f} GB). Skipping...")
-        return False
 
     try:
-        # Load dataset for this specific year/month
-        print(f"Loading {source_repo}/{data_dir}...")
+        print(f"[{year}-{month:02}] Starting...")
         start = time.time()
 
-        # First try streaming to avoid the split info mismatch
-        dataset = datasets.load_dataset(
-            source_repo,
-            data_dir=data_dir,
-            streaming=True,  # Use streaming first to get the data
+        # Load with streaming
+        dataset = datasets.load_dataset(source_repo, data_dir=data_dir, streaming=True)
+
+        # Use map to process in batches (much faster than iterating)
+        def extract_board_move(examples):
+            """Extract only board and move columns"""
+            return {"board": examples["board"], "move": examples["move"]}
+
+        # Process in larger batches for efficiency
+        print(f"[{year}-{month:02}] Processing data...")
+        train_data = dataset["train"].map(
+            extract_board_move,
+            batched=True,
+            batch_size=10000,  # Process 10k at a time
+            remove_columns=[
+                col
+                for col in dataset["train"].column_names
+                if col not in ["board", "move"]
+            ],
         )
 
-        # Convert streaming dataset to regular dataset for this partition only
-        print("Converting streaming dataset to regular dataset...")
-        train_data_streaming = dataset["train"]
-
-        # Collect the data (this loads it into memory)
-        all_data: Dict[str, List[Any]] = {"board": [], "move": []}
+        # Convert to regular dataset for pushing
+        print(f"[{year}-{month:02}] Collecting data...")
+        boards = []
+        moves = []
         count = 0
-        for example in train_data_streaming:
-            all_data["board"].append(example["board"])
-            all_data["move"].append(example["move"])
-            count += 1
-            if count % 100000 == 0:
-                print(f"  Loaded {count:,} examples...")
 
-        # Create a new dataset from the collected data
+        for batch in train_data.iter(batch_size=10000):
+            boards.extend(batch["board"])
+            moves.extend(batch["move"])
+            count += len(batch["board"])
+            if count % 100000 == 0:
+                print(f"[{year}-{month:02}] Collected {count:,} samples...")
+
+        # Create dataset
         from datasets import Dataset
 
-        train_data = Dataset.from_dict(all_data)
+        slim_data = Dataset.from_dict({"board": boards, "move": moves})
 
-        load_time = time.time() - start
-        num_samples = len(train_data)
-        print(f"Loaded {num_samples:,} samples in {load_time:.1f}s")
+        # Push to hub
+        print(f"[{year}-{month:02}] Pushing {len(slim_data):,} samples to hub...")
+        slim_data.push_to_hub(target_repo, private=False, data_dir=data_dir)
 
-        # We already have only board and move columns
-        slim_data = train_data
+        elapsed = time.time() - start
+        print(
+            f"[{year}-{month:02}] ✓ Complete! {len(slim_data):,} samples in {elapsed:.1f}s"
+        )
 
-        # Verify the data
-        print(f"Final columns: {slim_data.column_names}")
-        print(f"Final size: {len(slim_data):,} samples")
-
-        # Calculate size reduction by looking at actual data
-        # Get a sample to compare
-        sample = slim_data[0]
-
-        # Original columns from LichessParsedBlitz
-        original_columns = [
-            "Event",
-            "Site",
-            "White",
-            "Black",
-            "Result",
-            "UTCDate",
-            "UTCTime",
-            "WhiteElo",
-            "BlackElo",
-            "WhiteRatingDiff",
-            "BlackRatingDiff",
-            "ECO",
-            "Opening",
-            "TimeControl",
-            "Termination",
-            "movetext",
-            "board",
-            "move",
-            "move_idx",
-        ]
-
-        # Estimate original size (board + move + all metadata)
-        # Rough estimates based on typical values
-        metadata_size_estimate = 500  # All the metadata fields
-        board_move_size = len(sample["board"]) + len(sample["move"])
-        original_size_estimate = board_move_size + metadata_size_estimate
-        slim_size_estimate = board_move_size
-
-        reduction_pct = (1 - slim_size_estimate / original_size_estimate) * 100
-
-        print("\nSize analysis:")
-        print(f"  Original columns: {len(original_columns)} fields")
-        print("  Slim columns: 2 fields (board, move)")
-        print(f"  Board size: {len(sample['board'])} chars")
-        print(f"  Move size: {len(sample['move'])} chars")
-        print(f"  Estimated metadata overhead: ~{metadata_size_estimate} chars")
-        print(f"  Size reduction: ~{reduction_pct:.1f}%")
-
-        # Show sample
-        sample = slim_data[0]
-        print(f"Sample: board='{sample['board'][:50]}...', move='{sample['move']}'")
-
-        if not dry_run:
-            # Push to hub
-            print(f"Pushing to {target_repo}/{data_dir}...")
-            start = time.time()
-            slim_data.push_to_hub(target_repo, private=False, data_dir=data_dir)
-            push_time = time.time() - start
-            print(f"Pushed in {push_time:.1f}s")
-        else:
-            print("DRY RUN: Skipping push to hub")
-
-        # Log success
-        with open("process_log.csv", "a") as f:
-            f.write(f"{year},{month},{num_samples},success\n")
-
-        print(f"✓ Completed {year}-{month:02}")
-        return True
+        return year, month, len(slim_data), "success", elapsed
 
     except Exception as e:
-        print(f"✗ Error processing {year}-{month:02}: {e}")
-        with open("process_log.csv", "a") as f:
-            f.write(f"{year},{month},0,error: {e}\n")
-        return False
-    finally:
-        # Always try to clean up
-        try:
-            datasets.disable_caching()
-            import gc
-
-            gc.collect()
-        except Exception:
-            pass
+        print(f"[{year}-{month:02}] ✗ Error: {e}")
+        return year, month, 0, f"error: {e}", 0
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create OneBillionMoves dataset")
+    parser = argparse.ArgumentParser(
+        description="Fast parallel OneBillionMoves creation"
+    )
     parser.add_argument("--start-year", type=int, default=2013, help="Start year")
     parser.add_argument("--start-month", type=int, default=1, help="Start month")
     parser.add_argument("--end-year", type=int, default=2024, help="End year")
     parser.add_argument("--end-month", type=int, default=10, help="End month")
-    parser.add_argument("--dry-run", action="store_true", help="Don't push to hub")
     parser.add_argument(
-        "--single",
-        nargs=2,
-        type=int,
-        metavar=("YEAR", "MONTH"),
-        help="Process single year/month",
+        "--workers", type=int, default=4, help="Number of parallel workers"
     )
+    parser.add_argument("--test", action="store_true", help="Test with just 2 months")
 
     args = parser.parse_args()
 
-    # Disable caching to save disk space
+    # Disable caching
     disable_caching()
 
-    # Create log file
-    if not Path("process_log.csv").exists():
-        with open("process_log.csv", "w") as f:
-            f.write("year,month,samples,status\n")
+    # Generate list of year/month tuples
+    tasks = []
+    current_year = args.start_year
+    current_month = args.start_month
 
-    if args.single:
-        # Process single year/month
-        year, month = args.single
-        process_year_month(year, month, dry_run=args.dry_run)
-    else:
-        # Process range
-        current_year = args.start_year
-        current_month = args.start_month
+    while (current_year < args.end_year) or (
+        current_year == args.end_year and current_month <= args.end_month
+    ):
+        tasks.append((current_year, current_month))
+        current_month += 1
+        if current_month > 12:
+            current_month = 1
+            current_year += 1
 
-        while (current_year < args.end_year) or (
-            current_year == args.end_year and current_month <= args.end_month
-        ):
-            success = process_year_month(
-                current_year, current_month, dry_run=args.dry_run
-            )
+    if args.test:
+        tasks = tasks[:2]  # Just test with first 2 months
+        print(f"TEST MODE: Processing only {tasks}")
 
-            if not success and not args.dry_run:
-                print("\nStopping due to error or low disk space")
-                break
+    print(f"Processing {len(tasks)} months with {args.workers} workers")
+    print("=" * 60)
 
-            # Move to next month
-            current_month += 1
-            if current_month > 12:
-                current_month = 1
-                current_year += 1
+    # Process in parallel
+    results = []
+    start_time = time.time()
 
-            # Small delay between uploads
-            if not args.dry_run:
-                time.sleep(2)
+    with ProcessPoolExecutor(max_workers=args.workers) as executor:
+        # Submit all tasks
+        futures = {executor.submit(process_single_month, task): task for task in tasks}
+
+        # Process as they complete
+        for future in as_completed(futures):
+            year, month, samples, status, elapsed = future.result()
+            results.append((year, month, samples, status, elapsed))
+
+            # Log to file
+            with open("parallel_process_log.csv", "a") as f:
+                f.write(f"{year},{month},{samples},{status},{elapsed:.1f}\n")
+
+    # Summary
+    total_time = time.time() - start_time
+    total_samples = sum(r[2] for r in results if r[3] == "success")
+    successful = sum(1 for r in results if r[3] == "success")
 
     print("\n" + "=" * 60)
-    print("Processing complete!")
+    print("COMPLETE!")
+    print(f"Processed {successful}/{len(tasks)} months successfully")
+    print(f"Total samples: {total_samples:,}")
+    print(f"Total time: {total_time/60:.1f} minutes")
+    print(f"Average time per month: {total_time/len(tasks):.1f}s")
     print("=" * 60)
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method
+    mp.set_start_method("spawn", force=True)
     main()
