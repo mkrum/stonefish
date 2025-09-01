@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,12 +8,12 @@ import torch
 import torch.distributed as dist
 import torch.nn
 import torch.nn.functional as functional
-import wandb
 from mllg import TestInfo, TrainInfo, ValidationInfo
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
+import wandb
 from stonefish.mask import MoveMask
 
 # Set up logger
@@ -106,16 +107,24 @@ class PreTrainContext:
     epochs: int = 1000
     eval_freq: int = 5000
     gradient_clip: float = 1.0
+    compile_model: bool = False
+    compile_mode: str = "default"
 
     def __call__(self, logger, model, opt):
         # Setup distributed training if available
         local_rank, world_size, is_distributed = setup_distributed()
         is_main_process = local_rank == 0
 
+        # Compile model if requested
+        if self.compile_model:
+            train_logger.info(f"Compiling model with mode='{self.compile_mode}'")
+            model = torch.compile(model, mode=self.compile_mode)
+
         # Inject the model's board_tokenizer into the datasets
-        self.train_dl.dataset.board_tokenizer = model.board_tokenizer
+        base_model = model._orig_mod if hasattr(model, "_orig_mod") else model
+        self.train_dl.dataset.board_tokenizer = base_model.board_tokenizer
         if self.test_dl:
-            self.test_dl.dataset.board_tokenizer = model.board_tokenizer
+            self.test_dl.dataset.board_tokenizer = base_model.board_tokenizer
 
         # Wrap model in DDP if distributed
         if is_distributed:
@@ -177,28 +186,62 @@ class PreTrainContext:
                 train_sampler.set_epoch(epoch)
 
             train_logger.info("About to iterate over training dataloader")
+            batch_end = time.time()  # Initialize for first iteration
+
             for batch_idx, (state, output) in enumerate(self.train_dl):
+                batch_start = time.time()
+                data_time = batch_start - batch_end  # Time spent waiting for data
+
                 train_logger.info(f"Successfully got batch {batch_idx}")
                 train_logger.info(
                     f"Processing batch {batch_idx}, state shape: {state.shape}, output shape: {output.shape}"
                 )
 
+                zero_grad_start = time.time()
                 opt.zero_grad()
+                zero_grad_time = time.time() - zero_grad_start
                 train_logger.debug("Gradients zeroed")
 
+                forward_start = time.time()
                 loss, accuracy = self.train_fn(model, state, output)
+                forward_time = time.time() - forward_start
                 train_logger.debug(
                     f"Forward pass complete, loss: {loss.item():.6f}, accuracy: {accuracy.item():.4f}"
                 )
 
+                backward_start = time.time()
                 loss.backward()
+                backward_time = time.time() - backward_start
                 train_logger.debug("Backward pass complete")
 
+                clip_start = time.time()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
+                clip_time = time.time() - clip_start
                 train_logger.debug("Gradient clipping complete")
 
+                optimizer_start = time.time()
                 opt.step()
+                optimizer_time = time.time() - optimizer_start
                 train_logger.debug("Optimizer step complete")
+
+                batch_end = time.time()
+                batch_time = batch_end - batch_start
+
+                # Log timing every 100 steps
+                if batch_idx % 100 == 0 and batch_idx > 0:
+                    samples_per_sec = state.shape[0] / batch_time
+                    wandb.log(
+                        {
+                            "timing/data_ms": data_time * 1000,
+                            "timing/zero_grad_ms": zero_grad_time * 1000,
+                            "timing/forward_ms": forward_time * 1000,
+                            "timing/backward_ms": backward_time * 1000,
+                            "timing/clip_ms": clip_time * 1000,
+                            "timing/optimizer_ms": optimizer_time * 1000,
+                            "timing/batch_ms": batch_time * 1000,
+                            "timing/samples_per_sec": samples_per_sec,
+                        }
+                    )
 
                 # Only log from main process
                 if is_main_process:

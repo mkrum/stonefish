@@ -31,9 +31,11 @@ benchmark *args:
 eval *args:
 	docker run --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace {{DOCKER_IMAGE_NAME}} python -m stonefish.eval {{args}}
 
-train-local *args:
-	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} python -m stonefish.train {{args}}
+train-docker *args:
+	docker run -it --rm -v "$PWD:/workspace" -v "$HOME/.cache/huggingface:/root/.cache/huggingface" -w /workspace -e WANDB_API_KEY {{DOCKER_IMAGE_NAME}} torchrun --standalone --nnodes 1 --nproc_per_node=1 -m stonefish.train {{args}}
 
+train-local *args:
+	uv run --env-file .env torchrun --nnodes 1 --nproc_per_node=1 -m stonefish.train {{args}}
 
 shell:
 	@echo "=== Local Debug Shell ==="

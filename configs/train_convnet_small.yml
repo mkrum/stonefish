@@ -2,6 +2,8 @@ pretrain_context: !PreTrainContext()
     epochs: 5
     eval_freq: 1000
     gradient_clip: 1.0
+    compile_model: true
+    compile_mode: max-autotune
 
     train_fn: !train_step
     eval_fn: !eval_model
@@ -19,7 +21,7 @@ pretrain_context: !PreTrainContext()
             split: train
             streaming: true
             dataset_name: mkrum/LichessParsedBlitz
-        batch_size: 128
+        batch_size: 512
         shuffle: False
         drop_last: False
         collate_fn: null
