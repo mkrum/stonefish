@@ -126,6 +126,15 @@ class PreTrainContext:
         if self.test_dl:
             self.test_dl.dataset.board_tokenizer = base_model.board_tokenizer
 
+        # Log dataset configuration
+        train_logger.info(
+            f"Training dataset: streaming={self.train_dl.dataset.streaming}, "
+            f"type={type(self.train_dl.dataset).__name__}, "
+            f"num_workers={self.train_dl.num_workers}, "
+            f"prefetch_factor={self.train_dl.prefetch_factor}, "
+            f"batch_size={self.train_dl.batch_size}"
+        )
+
         # Wrap model in DDP if distributed
         if is_distributed:
             torch.cuda.set_device(local_rank)
@@ -186,14 +195,43 @@ class PreTrainContext:
                 train_sampler.set_epoch(epoch)
 
             train_logger.info("About to iterate over training dataloader")
+            train_logger.info(
+                f"DataLoader config: num_workers={self.train_dl.num_workers}, "
+                f"prefetch_factor={self.train_dl.prefetch_factor}, "
+                f"batch_size={self.train_dl.batch_size}"
+            )
+
+            # Track if this is first iteration (when workers spawn)
+            epoch_start = time.time()
+            first_batch_time = None
+
+            train_logger.info("Creating dataloader iterator...")
+            iter_create_start = time.time()
+            train_iter = iter(self.train_dl)
+            iter_create_time = time.time() - iter_create_start
+            train_logger.info(f"Iterator created in {iter_create_time:.2f}s")
+
             batch_end = time.time()  # Initialize for first iteration
 
-            for batch_idx, (state, output) in enumerate(self.train_dl):
+            for batch_idx, (state, output) in enumerate(train_iter):
                 batch_start = time.time()
                 data_time = batch_start - batch_end  # Time spent waiting for data
 
-                train_logger.info(f"Successfully got batch {batch_idx}")
-                train_logger.info(
+                # Track first batch timing
+                if batch_idx == 0 and first_batch_time is None:
+                    first_batch_time = batch_start - epoch_start
+                    train_logger.info(
+                        f"First batch took {first_batch_time:.2f}s to load (includes worker startup)"
+                    )
+
+                # Log detailed timing for first 5 batches
+                if batch_idx < 5:
+                    train_logger.info(
+                        f"Batch {batch_idx}: data loading took {data_time*1000:.1f}ms"
+                    )
+
+                train_logger.debug(f"Successfully got batch {batch_idx}")
+                train_logger.debug(
                     f"Processing batch {batch_idx}, state shape: {state.shape}, output shape: {output.shape}"
                 )
 
@@ -229,7 +267,12 @@ class PreTrainContext:
 
                 # Log timing every 100 steps
                 if batch_idx % 100 == 0 and batch_idx > 0:
-                    samples_per_sec = state.shape[0] / batch_time
+                    total_time = (
+                        data_time + batch_time
+                    )  # Total time including data wait
+                    effective_samples_per_sec = state.shape[0] / total_time
+                    compute_samples_per_sec = state.shape[0] / batch_time
+
                     wandb.log(
                         {
                             "timing/data_ms": data_time * 1000,
@@ -239,7 +282,10 @@ class PreTrainContext:
                             "timing/clip_ms": clip_time * 1000,
                             "timing/optimizer_ms": optimizer_time * 1000,
                             "timing/batch_ms": batch_time * 1000,
-                            "timing/samples_per_sec": samples_per_sec,
+                            "timing/total_ms": total_time * 1000,
+                            "timing/compute_samples_per_sec": compute_samples_per_sec,
+                            "timing/effective_samples_per_sec": effective_samples_per_sec,
+                            "timing/gpu_utilization": (batch_time / total_time) * 100,
                         }
                     )
 
@@ -279,7 +325,14 @@ class PreTrainContext:
                     dist.barrier()
 
             # End of epoch evaluation
-            train_logger.info(f"Finished training for epoch {epoch}")
+            epoch_end = time.time()
+            epoch_time = epoch_end - epoch_start
+            train_logger.info(
+                f"Finished training for epoch {epoch} in {epoch_time:.2f}s"
+            )
+            train_logger.info(
+                f"Average batch time: {epoch_time / (batch_idx + 1):.3f}s"
+            )
             if is_main_process:
                 train_logger.info(f"Starting end-of-epoch evaluation for epoch {epoch}")
                 if self.eval_fn is not None:

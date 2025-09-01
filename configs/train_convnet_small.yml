@@ -3,7 +3,7 @@ pretrain_context: !PreTrainContext()
     eval_freq: 1000
     gradient_clip: 1.0
     compile_model: true
-    compile_mode: max-autotune
+    compile_mode: default
 
     train_fn: !train_step
     eval_fn: !eval_model
@@ -19,15 +19,15 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-            streaming: true
-            dataset_name: mkrum/LichessParsedBlitz
+            streaming: false
+            dataset_name: mkrum/ParsedChess
         batch_size: 512
         shuffle: False
         drop_last: False
         collate_fn: null
-        num_workers: 1
+        num_workers: 4
         pin_memory: false
-        prefetch_factor: 2
+        prefetch_factor: 4
 
     test_dl: !DataLoader()
         dataset: !ChessDataset()

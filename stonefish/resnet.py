@@ -132,9 +132,9 @@ class ChessConvNet(nn.Module):
         if len(x.shape) == 4 and x.shape[3] == self.input_channels:
             x = x.permute(
                 0, 3, 1, 2
-            )  # [batch, height, width, channels] -> [batch, channels, height, width]
+            ).contiguous()  # [batch, height, width, channels] -> [batch, channels, height, width]
         elif len(x.shape) == 3 and x.shape[2] == self.input_channels:
-            x = x.permute(2, 0, 1).unsqueeze(0)  # Single item handling
+            x = x.permute(2, 0, 1).unsqueeze(0).contiguous()  # Single item handling
 
         # Forward pass
         x = self.conv_input(x)

@@ -28,3 +28,5 @@ Dockerfile.cpu
 Dockerfile.gpu
 docker-*.sh
 k8s/
+rl_checkpoints/*
+*.pth
