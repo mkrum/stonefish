@@ -270,39 +270,36 @@ class PreTrainContext:
                 batch_end = time.time()
                 batch_time = batch_end - batch_start
 
-                # Log timing every 100 steps
-                if batch_idx % 100 == 0 and batch_idx > 0:
+                # Only log from main process
+                if is_main_process:
                     total_time = (
                         data_time + batch_time
                     )  # Total time including data wait
                     effective_samples_per_sec = state.shape[0] / total_time
                     compute_samples_per_sec = state.shape[0] / batch_time
+                    timing = {
+                        "timing/data_ms": data_time * 1000,
+                        "timing/zero_grad_ms": zero_grad_time * 1000,
+                        "timing/forward_ms": forward_time * 1000,
+                        "timing/backward_ms": backward_time * 1000,
+                        "timing/clip_ms": clip_time * 1000,
+                        "timing/optimizer_ms": optimizer_time * 1000,
+                        "timing/batch_ms": batch_time * 1000,
+                        "timing/total_ms": total_time * 1000,
+                        "timing/compute_samples_per_sec": compute_samples_per_sec,
+                        "timing/effective_samples_per_sec": effective_samples_per_sec,
+                        "timing/gpu_utilization": (batch_time / total_time) * 100,
+                    }
 
-                    if is_main_process:
-                        wandb.log(
-                            {
-                                "timing/data_ms": data_time * 1000,
-                                "timing/zero_grad_ms": zero_grad_time * 1000,
-                                "timing/forward_ms": forward_time * 1000,
-                                "timing/backward_ms": backward_time * 1000,
-                                "timing/clip_ms": clip_time * 1000,
-                                "timing/optimizer_ms": optimizer_time * 1000,
-                                "timing/batch_ms": batch_time * 1000,
-                                "timing/total_ms": total_time * 1000,
-                                "timing/compute_samples_per_sec": compute_samples_per_sec,
-                                "timing/effective_samples_per_sec": effective_samples_per_sec,
-                                "timing/gpu_utilization": (batch_time / total_time)
-                                * 100,
-                            }
-                        )
-
-                # Only log from main process
-                if is_main_process:
                     logger.log_info(TrainInfo(epoch, batch_idx, loss.item()))
 
                     # Log training metrics to wandb
                     wandb.log(
-                        {"train_loss": loss.item(), "train_acc": accuracy.item()},
+                        {
+                            "train_loss": loss.item(),
+                            "train_acc": accuracy.item(),
+                            **timing,
+                        },
                         step=epoch * len(self.train_dl) + batch_idx,
                     )
 

@@ -2,6 +2,8 @@
 Simple pytorch dataset for the chess data
 """
 
+import os
+
 import chess
 import datasets
 import torch
@@ -161,11 +163,19 @@ class StreamingChessDataset(IterableDataset):
         info = api.dataset_info(dataset_name)
         # This is basically hardcoded for mkrum/LichessParsedBlitz
         self.n_examples = info.cardData["dataset_info"]["splits"][0]["num_examples"]
-        self.data = datasets.load_dataset(dataset_name, streaming=True)[split]
+
+        # Load with larger buffer size to reduce chunk boundary delays
+        # Set environment variable for larger streaming buffer
+        os.environ["HF_DATASETS_STREAMING_BUFFER_SIZE"] = "100"  # MB
+
+        self.data = datasets.load_dataset(
+            dataset_name,
+            streaming=True,
+        )[split]
         self.board_tokenizer = board_tokenizer
 
     def __iter__(self):
-        """Iterator for streaming datasets - optimized version"""
+        """Iterator for streaming datasets"""
 
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
@@ -186,12 +196,9 @@ class StreamingChessDataset(IterableDataset):
         total_workers *= world_size
         global_worker_id = worker_id * world_size + rank_id
 
-        # Skip directly to this worker's samples and process every Nth sample
-        worker_data = self.data.skip(global_worker_id)
-
-        for i, row in enumerate(worker_data):
-            # Process every total_workers-th sample
-            if i % total_workers == 0:
+        # Standard approach - each worker processes its assigned samples
+        for i, row in enumerate(self.data):
+            if i % total_workers == global_worker_id:
                 board = chess.Board(row["board"])
                 board_tensor = self.board_tokenizer.from_board(board)
                 move = CMove.from_str(row["move"]).to_int()

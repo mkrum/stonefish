@@ -50,7 +50,7 @@ spec:
           value: "/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/local/lib"
         command: ["torchrun", "--standalone", "--nnodes=1", "--nproc_per_node=4", "-m", "stonefish.train"]
         args: [
-          "configs/train_convnet_small.yml", "/mnt/output/big_convnet_model"
+          "configs/train_convnet_bigger.yml", "/mnt/output/big_convnet_model"
         ]
         volumeMounts:
         - name: output-volume

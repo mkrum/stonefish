@@ -40,8 +40,8 @@ pretrain_context: !PreTrainContext()
 
 model: !ChessConvNet()
     input_channels: 20
-    num_filters: 128
-    num_blocks: 2
+    num_filters: 512  # 4x more filters
+    num_blocks: 64
     output_dim: 5632
 
 agent: !ModelChessAgent()
