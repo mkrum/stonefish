@@ -88,6 +88,10 @@ create-wandb-secret:
 	@echo "=== Creating Weights & Biases secret ==="
 	kubectl create secret generic wandb-secret --from-literal=api-key="${WANDB_API_KEY}" --dry-run=client -o yaml | kubectl apply -f -
 
+create-hf-secret:
+	@echo "=== Creating HF secret ==="
+	kubectl create secret generic hf-secret --from-literal=api-key="${HF_TOKEN}" --dry-run=client -o yaml | kubectl apply -f -
+
 train-deploy:
 	@echo "=== Deploying training job ==="
 	kubectl delete job stonefish-training --ignore-not-found

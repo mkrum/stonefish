@@ -145,7 +145,12 @@ class PreTrainContext:
 
         # Create distributed samplers if needed
         train_sampler = None
-        if is_distributed and hasattr(self.train_dl.dataset, "__len__"):
+
+        if (
+            is_distributed
+            and hasattr(self.train_dl.dataset, "__len__")
+            and not self.train_dl.dataset.streaming
+        ):
             # Create distributed sampler for training data
             train_sampler = DistributedSampler(
                 self.train_dl.dataset,
@@ -273,21 +278,23 @@ class PreTrainContext:
                     effective_samples_per_sec = state.shape[0] / total_time
                     compute_samples_per_sec = state.shape[0] / batch_time
 
-                    wandb.log(
-                        {
-                            "timing/data_ms": data_time * 1000,
-                            "timing/zero_grad_ms": zero_grad_time * 1000,
-                            "timing/forward_ms": forward_time * 1000,
-                            "timing/backward_ms": backward_time * 1000,
-                            "timing/clip_ms": clip_time * 1000,
-                            "timing/optimizer_ms": optimizer_time * 1000,
-                            "timing/batch_ms": batch_time * 1000,
-                            "timing/total_ms": total_time * 1000,
-                            "timing/compute_samples_per_sec": compute_samples_per_sec,
-                            "timing/effective_samples_per_sec": effective_samples_per_sec,
-                            "timing/gpu_utilization": (batch_time / total_time) * 100,
-                        }
-                    )
+                    if is_main_process:
+                        wandb.log(
+                            {
+                                "timing/data_ms": data_time * 1000,
+                                "timing/zero_grad_ms": zero_grad_time * 1000,
+                                "timing/forward_ms": forward_time * 1000,
+                                "timing/backward_ms": backward_time * 1000,
+                                "timing/clip_ms": clip_time * 1000,
+                                "timing/optimizer_ms": optimizer_time * 1000,
+                                "timing/batch_ms": batch_time * 1000,
+                                "timing/total_ms": total_time * 1000,
+                                "timing/compute_samples_per_sec": compute_samples_per_sec,
+                                "timing/effective_samples_per_sec": effective_samples_per_sec,
+                                "timing/gpu_utilization": (batch_time / total_time)
+                                * 100,
+                            }
+                        )
 
                 # Only log from main process
                 if is_main_process:

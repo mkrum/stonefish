@@ -2,8 +2,6 @@ pretrain_context: !PreTrainContext()
     epochs: 5
     eval_freq: 1000
     gradient_clip: 1.0
-    compile_model: true
-    compile_mode: default
 
     train_fn: !train_step
     eval_fn: !eval_model
@@ -19,8 +17,8 @@ pretrain_context: !PreTrainContext()
     train_dl: !DataLoader()
         dataset: !ChessDataset()
             split: train
-            streaming: false
-            dataset_name: mkrum/ParsedChess
+            streaming: true
+            dataset_name: mkrum/LichessParsedBlitz
         batch_size: 512
         shuffle: False
         drop_last: False
@@ -43,7 +41,7 @@ pretrain_context: !PreTrainContext()
 model: !ChessConvNet()
     input_channels: 20
     num_filters: 128
-    num_blocks: 2
+    num_blocks: 32
     output_dim: 5632
 
 agent: !ModelChessAgent()

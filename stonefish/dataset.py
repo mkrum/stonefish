@@ -5,6 +5,8 @@ Simple pytorch dataset for the chess data
 import chess
 import datasets
 import torch
+import torch.distributed as dist
+import torch.utils.data
 from fastchessenv import CMove
 from huggingface_hub import HfApi
 from torch.nn.utils.rnn import pad_sequence
@@ -163,12 +165,37 @@ class StreamingChessDataset(IterableDataset):
         self.board_tokenizer = board_tokenizer
 
     def __iter__(self):
-        """Iterator for streaming datasets"""
-        for row in self.data:
-            board = chess.Board(row["board"])
-            board_tensor = self.board_tokenizer.from_board(board)
-            move = CMove.from_str(row["move"]).to_int()
-            yield board_tensor, torch.tensor(move).long()
+        """Iterator for streaming datasets - optimized version"""
+
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            # Single-process data loading
+            worker_id = 0
+            total_workers = 1
+        else:
+            worker_id = worker_info.id
+            total_workers = worker_info.num_workers
+
+        if dist.is_available() and dist.is_initialized():
+            world_size = dist.get_world_size()
+            rank_id = dist.get_rank()
+        else:
+            world_size = 1
+            rank_id = 0
+
+        total_workers *= world_size
+        global_worker_id = worker_id * world_size + rank_id
+
+        # Skip directly to this worker's samples and process every Nth sample
+        worker_data = self.data.skip(global_worker_id)
+
+        for i, row in enumerate(worker_data):
+            # Process every total_workers-th sample
+            if i % total_workers == 0:
+                board = chess.Board(row["board"])
+                board_tensor = self.board_tokenizer.from_board(board)
+                move = CMove.from_str(row["move"]).to_int()
+                yield board_tensor, torch.tensor(move).long()
 
     def __len__(self):
         return self.n_examples

@@ -1,32 +1,81 @@
-data/*
-new_repo/*
-llmeval/*
-wandb/*
+# Large model files - MUST BE FIRST
 *.pth
 *.pt
 *.ckpt
+*.safetensors
+rl_checkpoints/
+big_convnet_model/
+resnet_model.pth
+latest_checkpoint.pth
+model_*.pth
+
+# Data directories
+data/
+new_repo/
+llmeval/
+wandb/
+LichessEval/
+
+# Large data files
 *.zip
 *.csv
-.git
+*.jsonl
+*.parquet
+
+# Git and VCS
+.git/
+.gitignore
+
+# Python artifacts
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Development files
 test/
 scripts/
 .github/
 .ruff.toml
+
+# Documentation (exclude specific files only)
 CLAUDE.md
 PLAN.md
-*.md
+
+# Config and build files
 justfile
 #justfile#
 poetry.lock
-.vscode/
-.idea/
-stockfish_comparison_results.csv
-latest_checkpoint.pth
+pyproject.toml.bak
 Dockerfile.cpu
 Dockerfile.gpu
 docker-*.sh
+
+# Kubernetes
 k8s/
-rl_checkpoints/*
-*.pth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+train.log
+
+# Temporary files
+*.#
+#*#
+.DS_Store

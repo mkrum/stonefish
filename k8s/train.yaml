@@ -39,13 +39,18 @@ spec:
             secretKeyRef:
               name: wandb-secret
               key: api-key
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: api-key
         - name: PYTORCH_CUDA_ALLOC_CONF
           value: "max_split_size_mb:512"
         - name: LD_LIBRARY_PATH
           value: "/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/usr/local/lib"
         command: ["torchrun", "--standalone", "--nnodes=1", "--nproc_per_node=4", "-m", "stonefish.train"]
         args: [
-          "configs/train_convnet_big.yml", "/mnt/output/big_convnet_model"
+          "configs/train_convnet_small.yml", "/mnt/output/big_convnet_model"
         ]
         volumeMounts:
         - name: output-volume

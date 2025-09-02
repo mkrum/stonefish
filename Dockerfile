@@ -1,9 +1,10 @@
-FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+# Multi-stage build for smaller image
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
 
-# Install base dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     git \
@@ -12,42 +13,82 @@ RUN apt-get update && apt-get install -y \
     libffi-dev \
     clang \
     libc++-dev \
-    libc++abi-dev
+    libc++abi-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Install uv
+RUN pip install --no-cache-dir uv
+
+WORKDIR /build
+
+# Build chess environment
+RUN git clone https://github.com/mkrum/chessenv.git /build/chessenv && \
+    cd /build/chessenv && \
+    ./build_lib.sh && \
+    python copy_libs.py && \
+    uv pip install --system . && \
+    ls -la /usr/local/lib/
+
+# Build MisterQueen
+RUN git clone --depth 1 https://github.com/fogleman/MisterQueen.git /build/MisterQueen && \
+    cd /build/MisterQueen && \
+    make COMPILE_FLAGS="-std=c99 -Wall -O3 -fPIC" && \
+    gcc -shared -o /build/libmisterqueen.so build/release/*.o -lpthread && \
+    gcc -shared -o /build/libtinycthread.so build/release/deps/tinycthread/tinycthread.o -lpthread
+
+# Build Stockfish
+RUN git clone --depth 1 https://github.com/official-stockfish/Stockfish.git /build/Stockfish && \
+    cd /build/Stockfish/src/ && \
+    make build net
+
+# Final stage - runtime only
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
 ENV LD_LIBRARY_PATH=/usr/local/lib
+ENV PATH=$PATH:/usr/local/bin/stockfish
 
-RUN pip install uv
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /workdir
+# Install uv for package management
+RUN pip install --no-cache-dir uv
 
-# Setup chess environment
-RUN git clone https://github.com/mkrum/chessenv.git /opt/chessenv && cd /opt/chessenv && ./build_lib.sh && python copy_libs.py  && uv build && uv sync && uv pip install --system . && cd /workdir
+# Copy built artifacts from builder
+COPY --from=builder /build/libmisterqueen.so /usr/local/lib/
+COPY --from=builder /build/libtinycthread.so /usr/local/lib/
+COPY --from=builder /build/Stockfish/src/stockfish /usr/local/bin/stockfish/
+# Copy installed fastchessenv Python package (includes the libraries in fastchessenv/lib/)
+COPY --from=builder /opt/conda/lib/python3.10/site-packages/fastchessenv /opt/conda/lib/python3.10/site-packages/fastchessenv
+COPY --from=builder /opt/conda/lib/python3.10/site-packages/fastchessenv*.dist-info /opt/conda/lib/python3.10/site-packages/
+# Copy the compiled C extension module
+COPY --from=builder /opt/conda/lib/python3.10/site-packages/fastchessenv_c*.so /opt/conda/lib/python3.10/site-packages/
 
-RUN git clone --depth 1 https://github.com/fogleman/MisterQueen.git /workdir/MisterQueen
-RUN cd /workdir/MisterQueen && make COMPILE_FLAGS="-std=c99 -Wall -O3 -fPIC" && cd ..
-RUN gcc -shared -o /usr/local/lib/libmisterqueen.so /workdir/MisterQueen/build/release/*.o -lpthread
-RUN gcc -shared -o /usr/local/lib/libtinycthread.so /workdir/MisterQueen/build/release/deps/tinycthread/tinycthread.o -lpthread
-
-# Setup Stockfish
-RUN git clone https://github.com/official-stockfish/Stockfish.git && \
-    cd Stockfish/src/ && make build net && cd
-
-ENV PATH=$PATH:/workdir/Stockfish/src
-
-# Install Python dependencies (CPU-only version)
 WORKDIR /stonefish
 
+# Install Python dependencies first (these change less frequently)
+# This layer will be cached unless requirements.txt changes
 COPY requirements.txt /stonefish/
-RUN uv pip install --system --no-cache-dir -r requirements.txt --index-url https://pypi.org/simple/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN uv pip install --system --no-cache-dir -r requirements.txt
 
-# Install stonefish
+# Copy only setup files for installing the package
+# This layer will be cached unless setup.py/pyproject.toml changes
+COPY setup.py pyproject.toml readme.md /stonefish/
+# Create package structure needed for installation
+RUN mkdir -p /stonefish/stonefish/eval /stonefish/stonefish/train
+COPY stonefish/__init__.py /stonefish/stonefish/
+COPY stonefish/eval/__init__.py /stonefish/stonefish/eval/
+COPY stonefish/train/__init__.py /stonefish/stonefish/train/
+RUN uv pip install --system --no-deps -e .
+
+# Copy the rest of the application code last
+# Only this layer rebuilds when you change code
 COPY . /stonefish
-RUN uv pip install --system -e .
 
-# Set clang as the default compiler
-ENV CC=clang
-ENV CXX=clang++
-
-RUN uv pip install --system open_spiel
-# Set default command
 CMD ["bash"]
