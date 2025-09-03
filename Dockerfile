@@ -1,5 +1,5 @@
 # Multi-stage build for smaller image
-FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime AS builder
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
@@ -42,8 +42,8 @@ RUN git clone --depth 1 https://github.com/official-stockfish/Stockfish.git /bui
     cd /build/Stockfish/src/ && \
     make build net
 
-# Final stage - runtime only
-FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+# Final stage - needs devel for torch.compile
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=UTC
