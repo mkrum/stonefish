@@ -4,7 +4,9 @@ Fast parallel version - process multiple months simultaneously
 """
 
 import argparse
+import csv
 import multiprocessing as mp
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -13,6 +15,40 @@ from datasets import disable_caching
 
 target_repo = "mkrum/OneBillionMoves"
 source_repo = "mkrum/LichessParsedBlitz"
+
+
+def read_count_log(filepath="data/count_log.csv"):
+    """Read year/month combinations from count_log.csv"""
+    tasks = []
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 2:
+                    try:
+                        year = int(row[0])
+                        month = int(row[1])
+                        tasks.append((year, month))
+                    except ValueError:
+                        continue
+    return list(set(tasks))  # Remove duplicates
+
+
+def read_completed_months(filepath="parallel_process_log.csv"):
+    """Read successfully completed months from log"""
+    completed = set()
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if len(row) >= 4 and row[3] == "success":
+                    try:
+                        year = int(row[0])
+                        month = int(row[1])
+                        completed.add((year, month))
+                    except ValueError:
+                        continue
+    return completed
 
 
 def process_single_month(year_month_tuple):
@@ -91,6 +127,11 @@ def main():
         "--workers", type=int, default=4, help="Number of parallel workers"
     )
     parser.add_argument("--test", action="store_true", help="Test with just 2 months")
+    parser.add_argument(
+        "--from-count-log",
+        action="store_true",
+        help="Read months from count_log.csv and skip already completed ones",
+    )
 
     args = parser.parse_args()
 
@@ -98,18 +139,33 @@ def main():
     disable_caching()
 
     # Generate list of year/month tuples
-    tasks = []
-    current_year = args.start_year
-    current_month = args.start_month
+    if args.from_count_log:
+        # Read from count_log.csv
+        print("Reading months from data/count_log.csv...")
+        all_tasks = read_count_log()
+        all_tasks.sort()  # Sort by year, month
 
-    while (current_year < args.end_year) or (
-        current_year == args.end_year and current_month <= args.end_month
-    ):
-        tasks.append((current_year, current_month))
-        current_month += 1
-        if current_month > 12:
-            current_month = 1
-            current_year += 1
+        # Filter out already completed
+        completed = read_completed_months()
+        tasks = [task for task in all_tasks if task not in completed]
+
+        print(f"Found {len(all_tasks)} total months")
+        print(f"Already completed: {len(completed)}")
+        print(f"Remaining to process: {len(tasks)}")
+    else:
+        # Use date range
+        tasks = []
+        current_year = args.start_year
+        current_month = args.start_month
+
+        while (current_year < args.end_year) or (
+            current_year == args.end_year and current_month <= args.end_month
+        ):
+            tasks.append((current_year, current_month))
+            current_month += 1
+            if current_month > 12:
+                current_month = 1
+                current_year += 1
 
     if args.test:
         tasks = tasks[:2]  # Just test with first 2 months
