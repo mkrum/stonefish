@@ -14,7 +14,6 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 import wandb
-from stonefish.mask import MoveMask
 
 # Set up logger
 train_logger = logging.getLogger(__name__)
@@ -36,45 +35,6 @@ def train_step(model, state, output):
     accuracy = (predictions == targets).float().mean()
 
     return loss, accuracy
-
-
-def seq_train_step(model, state, output):
-    model.train()
-
-    probs = model(state, output)
-
-    probs = probs.reshape(-1, probs.shape[-1])
-
-    output = output[:, 1:].reshape(
-        -1,
-    )
-    probs = probs[output != -1]
-    output = output[output != -1]
-
-    loss = functional.cross_entropy(probs, output.flatten().to(probs.device))
-    return loss
-
-
-def mask_train_step(model, state, output):
-    model.train()
-
-    mm = MoveMask.from_data(state, output)
-
-    masks = mm.update_mask(output)
-    masks = masks[:, 1:, :]
-
-    probs = model(state, output, logit_mask=masks.cuda())
-
-    probs = probs.reshape(-1, probs.shape[-1])
-
-    output = output[:, 1:].reshape(
-        -1,
-    )
-    probs = probs[output != -1]
-    output = output[output != -1]
-
-    loss = functional.cross_entropy(probs, output.flatten().to(probs.device))
-    return loss
 
 
 def setup_distributed():

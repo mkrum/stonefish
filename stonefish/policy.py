@@ -15,7 +15,7 @@ import torch.nn.functional
 from fastchessenv import CMove
 from torch.distributions import Categorical
 
-from stonefish.types import ChessAgent, ChessLogits, ChessPolicy
+from stonefish.types import ChessLogits, ChessPolicy
 
 
 @dataclass
@@ -158,48 +158,3 @@ class ModelChessAgent:
         agent = PolicyAgent(policy, self.temperature, self.sample)
 
         return agent(board)
-
-
-def eval_policy_cross_entropy(policy: ChessPolicy, positions: List[tuple]) -> float:
-    """
-    Evaluate policy using cross-entropy loss against ground truth moves.
-
-    Args:
-        policy: ChessPolicy to evaluate
-        positions: List of (board, true_move) tuples
-
-    Returns:
-        Average cross-entropy loss
-    """
-    total_loss = 0.0
-    count = 0
-
-    for board, true_move in positions:
-        move_probs = policy(board)
-        prob = move_probs[true_move]  # Assume move always has probability mass
-        total_loss += -torch.log(torch.tensor(prob)).item()
-        count += 1
-
-    return total_loss / count if count > 0 else float("inf")
-
-
-def eval_agent_accuracy(agent: ChessAgent, positions: List[tuple]) -> float:
-    """
-    Evaluate agent accuracy against ground truth moves.
-
-    Args:
-        agent: ChessAgent to evaluate
-        positions: List of (board, true_move) tuples
-
-    Returns:
-        Accuracy as fraction of correct moves
-    """
-    correct = 0
-    total = len(positions)
-
-    for board, true_move in positions:
-        predicted_move = agent(board)
-        if predicted_move == true_move:
-            correct += 1
-
-    return correct / total if total > 0 else 0.0

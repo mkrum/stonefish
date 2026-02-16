@@ -46,20 +46,3 @@ class MoveMask:
             move_mask[i, valid[:, tokens.shape[1]]] = 1.0
 
         return move_mask
-
-    def get_full_mask(self, tokens):
-        move_mask = torch.zeros((self.n, 2, MoveRep.width())).to(
-            self.tensor_map[0].device
-        )
-
-        for i in range(self.n):
-            vals = self.tensor_map[i]
-            for j in range(2):
-                tok = tokens[i]
-
-                valid = vals[tok[j] == vals[:, j]]
-
-                for v in valid[:, j + 1]:
-                    move_mask[i, j, int(v.item())] = 1.0
-
-        return move_mask

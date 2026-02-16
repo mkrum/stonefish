@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device",
         default=None,
-        choices=["cuda", "cpu"],
+        choices=["cuda", "cpu", "mps"],
         help="Device to run benchmarks on (auto-detects if not specified)",
     )
     parser.add_argument(
