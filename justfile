@@ -22,7 +22,7 @@ build-local:
 
 test:
 	@echo "=== Running Tests ==="
-	docker run -v $PWD:/stonefish {{DOCKER_IMAGE_NAME}} pytest -s
+	docker run -v $PWD:/stonefish {{DOCKER_IMAGE_NAME}} torchrun --standalone --nnodes 1 --nproc_per_node=1 -m pytest -s
 
 benchmark *args:
 	@echo "=== Benchmarking Model ==="

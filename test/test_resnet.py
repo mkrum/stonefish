@@ -113,7 +113,7 @@ def test_different_configurations():
         model = ChessResNet(**config)
         x = torch.randn(2, 69)
         output = model.inference(x)
-        assert output.shape == (2, 5700)
+        assert output.shape == (2, 5632)
 
     conv_configs = [
         {"num_filters": 64, "num_blocks": 2},

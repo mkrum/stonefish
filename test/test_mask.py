@@ -29,7 +29,6 @@ def test_mask():
         new = random_action(move_mask)
         move_token = torch.cat((move_token, new.view(-1, 1)), dim=1)
 
-    print(mask.get_full_mask(move_token))
     print(move_token)
     print(MoveRep.from_tensor(move_token[0]))
     print(MoveRep.from_tensor(move_token[1]))

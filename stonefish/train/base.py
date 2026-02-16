@@ -88,7 +88,7 @@ class PreTrainContext:
 
         # Log dataset configuration
         train_logger.info(
-            f"Training dataset: streaming={self.train_dl.dataset.streaming}, "
+            f"Training dataset: streaming={getattr(self.train_dl.dataset, 'streaming', False)}, "
             f"type={type(self.train_dl.dataset).__name__}, "
             f"num_workers={self.train_dl.num_workers}, "
             f"prefetch_factor={self.train_dl.prefetch_factor}, "
@@ -109,7 +109,7 @@ class PreTrainContext:
         if (
             is_distributed
             and hasattr(self.train_dl.dataset, "__len__")
-            and not self.train_dl.dataset.streaming
+            and not getattr(self.train_dl.dataset, "streaming", False)
         ):
             # Create distributed sampler for training data
             train_sampler = DistributedSampler(
