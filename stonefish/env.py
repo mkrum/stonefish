@@ -6,8 +6,15 @@ import chess.engine
 import chess.pgn
 import numpy as np
 import torch
-from fastchessenv import CChessEnv
-from fastchessenv.sfa import SFArray
+
+try:
+    from fastchessenv import CChessEnv
+    from fastchessenv.env import SFCChessEnv
+    from fastchessenv.sfa import SFArray
+
+    HAS_CCHESSENV = True
+except ImportError:
+    HAS_CCHESSENV = False
 
 try:
     import pyspiel
@@ -78,70 +85,87 @@ def chess_rollout(white_engine, black_engine):
     return game
 
 
-class CChessEnvTorch(CChessEnv):
-    def reset(self):
-        states, mask = super().reset()
-        return torch.LongTensor(states), torch.FloatTensor(mask)
+if HAS_CCHESSENV:
 
-    def step(self, actions):
-        actions = np.int32(actions.cpu().numpy())
+    class CChessEnvTorch(CChessEnv):
+        def reset(self):
+            states, mask = super().reset()
+            return torch.LongTensor(states), torch.FloatTensor(mask)
 
-        # TODO: Fix this
-        states, mask, rewards, done = super().step(actions)
+        def step(self, actions):
+            actions = np.int32(actions.cpu().numpy())
 
-        return (
-            torch.LongTensor(states),
-            torch.FloatTensor(mask),
-            torch.FloatTensor(rewards),
-            torch.FloatTensor(done),
-        )
+            # TODO: Fix this
+            states, mask, rewards, done = super().step(actions)
 
+            return (
+                torch.LongTensor(states),
+                torch.FloatTensor(mask),
+                torch.FloatTensor(rewards),
+                torch.FloatTensor(done),
+            )
 
-class CChessEnvTorchAgainstSF(CChessEnvTorch):
+    class CChessEnvTorchAgainstSF(CChessEnvTorch):
 
-    sfa = SFArray(1)
+        sfa = SFArray(1)
 
-    def sample_opponent(self):
-        state = self.get_state()
-        tmasks = self.get_mask()
-        moves = self.sfa.get_move_ints(state)
+        def sample_opponent(self):
+            state = self.get_state()
+            tmasks = self.get_mask()
+            moves = self.sfa.get_move_ints(state)
 
-        for i in range(moves.shape[0]):
-            m = moves[i]
-            t = tmasks[i]
+            for i in range(moves.shape[0]):
+                m = moves[i]
+                t = tmasks[i]
 
-            m = np.clip(m, 0, len(t))
+                m = np.clip(m, 0, len(t))
 
-            if t[m] != 1 or random.random() < 0.4:
-                probs = t / np.sum(t)
-                moves[i] = np.random.choice(len(probs), p=probs)
+                if t[m] != 1 or random.random() < 0.4:
+                    probs = t / np.sum(t)
+                    moves[i] = np.random.choice(len(probs), p=probs)
 
-        return moves
+            return moves
 
+    class CChessEnvTorchTwoPlayer(CChessEnv):
+        def reset(self):
+            states, mask = super().reset()
+            return torch.LongTensor(states), torch.FloatTensor(mask)
 
-class CChessEnvTorchTwoPlayer(CChessEnv):
-    def reset(self):
-        states, mask = super().reset()
-        return torch.LongTensor(states), torch.FloatTensor(mask)
+        def step(self, actions):
+            actions = np.int32(actions.cpu().numpy())
+            done, rewards = self.push_moves(actions)
 
-    def step(self, actions):
-        actions = np.int32(actions.cpu().numpy())
-        done, rewards = self.push_moves(actions)
+            rewards[(self.t >= self.max_step)] = 0
 
-        rewards[(self.t >= self.max_step)] = 0
+            done = torch.BoolTensor(done) | torch.BoolTensor(self.t >= self.max_step)
 
-        done = torch.BoolTensor(done) | torch.BoolTensor(self.t >= self.max_step)
+            self.reset_boards(np.int32(done.numpy()))
 
-        self.reset_boards(np.int32(done.numpy()))
+            states = self.get_state()
+            mask = self.get_mask()
+            return (
+                torch.LongTensor(states),
+                torch.FloatTensor(mask),
+                torch.FloatTensor(rewards),
+                done,
+            )
 
-        states = self.get_state()
-        mask = self.get_mask()
-        return (
-            torch.LongTensor(states),
-            torch.FloatTensor(mask),
-            torch.FloatTensor(rewards),
-            done,
-        )
+    class SFCChessEnvTorch(SFCChessEnv):
+        """Stockfish chess environment with torch tensor I/O."""
+
+        def reset(self):
+            states, mask = super().reset()
+            return torch.LongTensor(states), torch.FloatTensor(mask)
+
+        def step(self, actions):
+            actions = np.int32(actions.cpu().numpy())
+            states, mask, rewards, done = super().step(actions)
+            return (
+                torch.LongTensor(states),
+                torch.FloatTensor(mask),
+                torch.FloatTensor(rewards),
+                torch.FloatTensor(done),
+            )
 
 
 class TTTEnv:

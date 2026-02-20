@@ -9,12 +9,18 @@ import io
 
 import chess
 import chess.pgn
-import wandb
+import numpy as np
+import torch
+from fastchessenv import CBoard, CChessEnv
+from fastchessenv.env import SFCChessEnv
 from mllg import TestInfo
 from tqdm import tqdm
 
+import wandb
+from stonefish.convert import board_to_lczero_tensor
 from stonefish.env import RandomAgent, StockfishAgent
 from stonefish.eval.base import _create_pgn_html
+from stonefish.tokenizers import LCZeroBoardTokenizer
 from stonefish.types import ChessAgent
 
 
@@ -134,16 +140,15 @@ def training_agent_eval(
     agent_config,
     games_vs_random: int = 10,
     games_vs_stockfish: int = 10,
-    stockfish_depth: int = 1,
+    stockfish_depths: list[int] | int = 1,
     pgn_games: int = 2,
 ):
     """Creates a training-compatible agent evaluation function"""
+    if isinstance(stockfish_depths, int):
+        stockfish_depths = [stockfish_depths]
 
     def eval_fn(model, epoch):
-        # Create agent from model using config
         agent = agent_config(model=model)
-
-        # Collect metrics for wandb
         wandb_metrics = {}
 
         # Evaluate vs random
@@ -155,50 +160,179 @@ def training_agent_eval(
             for result in random_results:
                 wandb_metrics[result.loss_type] = result.loss
 
-        # Evaluate vs stockfish
-        if games_vs_stockfish > 0:
-            stockfish_agent = StockfishAgent(depth=stockfish_depth)
-            stockfish_results = evaluate_agents(
-                agent,
-                stockfish_agent,
-                num_games=games_vs_stockfish,
-                opponent_name="stockfish",
-            )
-            for result in stockfish_results:
-                wandb_metrics[result.loss_type] = result.loss
+        # Evaluate vs stockfish at each depth
+        for depth in stockfish_depths:
+            if games_vs_stockfish > 0:
+                sf_name = f"stockfish_d{depth}"
+                stockfish_agent = StockfishAgent(depth=depth)
+                stockfish_results = evaluate_agents(
+                    agent,
+                    stockfish_agent,
+                    num_games=games_vs_stockfish,
+                    opponent_name=sf_name,
+                )
+                for result in stockfish_results:
+                    wandb_metrics[result.loss_type] = result.loss
 
         # Generate PGNs for visualization
         if pgn_games > 0:
-            # Get sample games vs random
-            random_agent = RandomAgent()
-            random_pgns = get_pgns_between_agents(
-                agent, random_agent, num_games=pgn_games
+            if games_vs_random > 0:
+                random_agent = RandomAgent()
+                random_pgns = get_pgns_between_agents(
+                    agent, random_agent, num_games=pgn_games
+                )
+                random_games = []
+                for pgn_str in random_pgns:
+                    game = chess.pgn.read_game(io.StringIO(pgn_str))
+                    random_games.append(game)
+                html_content = _create_pgn_html(str(random_games[0]))
+                wandb_metrics["eval/PGNAgainstRandom"] = wandb.Html(html_content)
+
+            if games_vs_stockfish > 0:
+                # PGN against the highest depth
+                depth = stockfish_depths[-1]
+                stockfish_agent = StockfishAgent(depth=depth)
+                stockfish_pgns = get_pgns_between_agents(
+                    agent, stockfish_agent, num_games=pgn_games
+                )
+                stockfish_games = []
+                for pgn_str in stockfish_pgns:
+                    game = chess.pgn.read_game(io.StringIO(pgn_str))
+                    stockfish_games.append(game)
+                html_content = _create_pgn_html(str(stockfish_games[0]))
+                wandb_metrics[f"eval/PGNAgainstStockfishD{depth}"] = wandb.Html(
+                    html_content
+                )
+
+        return wandb_metrics
+
+    return eval_fn
+
+
+def _state_to_tensor(state, model):
+    """Convert CChessEnv flat state (N, 69) to model input tensor."""
+    if isinstance(model.board_tokenizer, LCZeroBoardTokenizer):
+        boards = []
+        for i in range(state.shape[0]):
+            cboard = CBoard.from_array(state[i])
+            py_board = cboard.to_board()
+            boards.append(board_to_lczero_tensor(py_board))
+        return torch.from_numpy(np.stack(boards))
+    else:
+        return torch.from_numpy(state).float()
+
+
+def _sample_moves_from_logits(logits, mask, temperature, sample):
+    """Sample moves from model logits masked by legal moves.
+
+    Args:
+        logits: (N, output_dim) model output tensor
+        mask: (N, 5632) legal move mask from env
+        temperature: temperature for sampling
+        sample: if False, take argmax instead of sampling
+    Returns:
+        (N,) int32 array of move indices for env.step()
+    """
+    n = logits.shape[0]
+    mask_dim = mask.shape[1]
+    # Slice logits to match env mask dimension
+    logits_masked = logits[:, :mask_dim].cpu()
+    mask_t = torch.from_numpy(mask).bool()
+
+    # Set illegal moves to -inf
+    logits_masked[~mask_t] = float("-inf")
+    logits_masked = logits_masked / temperature
+
+    moves = np.zeros(n, dtype=np.int32)
+    probs = torch.softmax(logits_masked, dim=-1)
+    for i in range(n):
+        if sample:
+            moves[i] = torch.multinomial(probs[i], 1).item()
+        else:
+            moves[i] = probs[i].argmax().item()
+    return moves
+
+
+def _play_parallel_games(model, env, num_games, temperature, sample, max_moves=500):
+    """Play num_games in parallel using CChessEnv, return (wins, losses, draws)."""
+    device = next(model.parameters()).device
+    state, mask = env.reset()
+
+    wins = losses = draws = 0
+    games_completed = 0
+    steps = 0
+
+    pbar = tqdm(total=num_games, desc="Parallel games", unit="game")
+
+    while games_completed < num_games:
+        state_tensor = _state_to_tensor(state, model).to(device)
+        with torch.no_grad():
+            logits = model.inference(state_tensor)
+
+        moves = _sample_moves_from_logits(logits, mask, temperature, sample)
+        state, mask, reward, done = env.step(moves)
+        steps += 1
+
+        for i in np.where(done)[0]:
+            if games_completed >= num_games:
+                break
+            if reward[i] > 0:
+                wins += 1
+            elif reward[i] < 0:
+                losses += 1
+            else:
+                draws += 1
+            games_completed += 1
+            pbar.update(1)
+            pbar.set_postfix({"wins": wins, "losses": losses, "draws": draws})
+
+        # Safety: if games are too long, count remaining as draws
+        if steps > max_moves:
+            remaining = num_games - games_completed
+            draws += remaining
+            games_completed = num_games
+            pbar.update(remaining)
+            break
+
+    pbar.close()
+    return wins, losses, draws
+
+
+def parallel_training_agent_eval(
+    games_vs_random: int = 10,
+    games_vs_stockfish: int = 10,
+    stockfish_depths: list[int] | int = 1,
+    temperature: float = 1.0,
+    sample: bool = True,
+    max_moves: int = 500,
+):
+    """Creates a parallel agent evaluation function using CChessEnv."""
+    if isinstance(stockfish_depths, int):
+        stockfish_depths = [stockfish_depths]
+
+    def eval_fn(model, epoch):
+        wandb_metrics = {}
+
+        if games_vs_random > 0:
+            env = CChessEnv(games_vs_random, max_step=max_moves)
+            w, loss, d = _play_parallel_games(
+                model, env, games_vs_random, temperature, sample, max_moves
             )
+            wandb_metrics["against_random_win_rate"] = w / games_vs_random
+            wandb_metrics["against_random_loss_rate"] = loss / games_vs_random
 
-            # Convert random PGN strings to game objects
-            random_games = []
-            for pgn_str in random_pgns:
-                game = chess.pgn.read_game(io.StringIO(pgn_str))
-                random_games.append(game)
-
-            html_content = _create_pgn_html(str(random_games[0]))
-            wandb_metrics["eval/PGNAgainstRandom"] = wandb.Html(html_content)
-
-            # Get sample games vs stockfish
-            stockfish_agent = StockfishAgent(depth=stockfish_depth)
-            stockfish_pgns = get_pgns_between_agents(
-                agent, stockfish_agent, num_games=pgn_games
-            )
-
-            # Convert stockfish PGN strings to game objects
-            stockfish_games = []
-            for pgn_str in stockfish_pgns:
-                game = chess.pgn.read_game(io.StringIO(pgn_str))
-                stockfish_games.append(game)
-
-            # Create wandb HTML viewer for stockfish games (one game only)
-            html_content = _create_pgn_html(str(stockfish_games[0]))
-            wandb_metrics["eval/PGNAgainstStockfishOne"] = wandb.Html(html_content)
+        for depth in stockfish_depths:
+            if games_vs_stockfish > 0:
+                sf_name = f"stockfish_d{depth}"
+                env = SFCChessEnv(games_vs_stockfish, depth=depth, max_step=max_moves)
+                w, loss, d = _play_parallel_games(
+                    model, env, games_vs_stockfish, temperature, sample, max_moves
+                )
+                wandb_metrics[f"against_{sf_name}_win_rate"] = w / games_vs_stockfish
+                wandb_metrics[f"against_{sf_name}_loss_rate"] = (
+                    loss / games_vs_stockfish
+                )
+                del env
 
         return wandb_metrics
 

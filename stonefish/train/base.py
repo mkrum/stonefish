@@ -59,6 +59,22 @@ def cleanup_distributed():
         dist.destroy_process_group()
 
 
+def _log_agent_results(agent_results, logger, step):
+    """Separate agent eval results into metrics vs HTML and log to wandb."""
+    regular_metrics = {}
+    html_content = {}
+    for key, value in agent_results.items():
+        if key.startswith("eval/PGN"):
+            html_content[key] = value
+        else:
+            regular_metrics[key] = value
+            logger.log_info(TestInfo(key, value))
+    if regular_metrics:
+        wandb.log(regular_metrics, step=step)
+    if html_content:
+        wandb.log(html_content, step=step)
+
+
 @dataclass
 class PreTrainContext:
 
@@ -66,12 +82,16 @@ class PreTrainContext:
     train_fn: Any
     train_dl: Any
     test_dl: Any
-    agent_eval_fn: Any
+    agent_eval_fn: Any = None
     epochs: int = 1000
     eval_freq: int = 5000
     gradient_clip: float = 1.0
     compile_model: bool = False
     compile_mode: str = "default"
+    use_amp: bool = False
+    amp_dtype: str = "float16"
+    warmup_steps: int = 0
+    lr_min: float = 0.0
 
     def __call__(self, logger, model, opt):
         device = next(model.parameters()).device
@@ -79,6 +99,35 @@ class PreTrainContext:
         # Setup distributed training if available
         local_rank, world_size, is_distributed = setup_distributed()
         is_main_process = local_rank == 0
+
+        # Setup LR scheduler (linear warmup + cosine decay)
+        total_steps = self.epochs * len(self.train_dl)
+        scheduler = None
+        if self.warmup_steps > 0 or self.lr_min > 0:
+            warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
+                opt, start_factor=1e-8, end_factor=1.0, total_iters=self.warmup_steps
+            )
+            cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                opt, T_max=total_steps - self.warmup_steps, eta_min=self.lr_min
+            )
+            scheduler = torch.optim.lr_scheduler.SequentialLR(
+                opt,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[self.warmup_steps],
+            )
+            train_logger.info(
+                f"LR schedule: linear warmup for {self.warmup_steps} steps, "
+                f"cosine decay to {self.lr_min} over {total_steps - self.warmup_steps} steps"
+            )
+
+        # Setup AMP
+        amp_dtype = getattr(torch, self.amp_dtype) if self.use_amp else None
+        use_grad_scaler = self.use_amp and device.type == "cuda"
+        scaler = torch.amp.GradScaler() if use_grad_scaler else None
+        if self.use_amp:
+            train_logger.info(
+                f"AMP enabled with dtype={self.amp_dtype}, scaler={use_grad_scaler}"
+            )
 
         # Compile model if requested
         if self.compile_model:
@@ -147,10 +196,33 @@ class PreTrainContext:
                 )
 
                 opt.zero_grad()
-                loss, accuracy = self.train_fn(model, state, output)
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), self.gradient_clip)
-                opt.step()
+                if self.use_amp:
+                    with torch.autocast(device.type, dtype=amp_dtype):
+                        loss, accuracy = self.train_fn(model, state, output)
+                    if scaler is not None:
+                        scaler.scale(loss).backward()
+                        scaler.unscale_(opt)
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), self.gradient_clip
+                        )
+                        scaler.step(opt)
+                        scaler.update()
+                    else:
+                        loss.backward()
+                        torch.nn.utils.clip_grad_norm_(
+                            model.parameters(), self.gradient_clip
+                        )
+                        opt.step()
+                else:
+                    loss, accuracy = self.train_fn(model, state, output)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), self.gradient_clip
+                    )
+                    opt.step()
+
+                if scheduler is not None:
+                    scheduler.step()
 
                 # Sync device so timing reflects actual compute, not async queue
                 if device.type == "mps":
@@ -174,35 +246,47 @@ class PreTrainContext:
 
                     logger.log_info(TrainInfo(epoch, batch_idx, loss.item()))
 
+                    current_lr = opt.param_groups[0]["lr"]
                     wandb.log(
                         {
                             "train_loss": loss.item(),
                             "train_acc": accuracy.item(),
+                            "lr": current_lr,
                             **timing,
                         },
                         step=epoch * len(self.train_dl) + batch_idx,
                     )
 
-                    if (
-                        batch_idx % self.eval_freq == 0
-                        and batch_idx > 0
-                        and self.eval_fn
-                    ):
-                        train_logger.info(
-                            f"Starting mid-epoch evaluation at batch {batch_idx}"
-                        )
-                        out = self.eval_fn(model, self.test_dl, self.train_fn)
-                        train_logger.info("Mid-epoch evaluation complete")
-                        logger.log_info(ValidationInfo(epoch, batch_idx, out))
+                    if batch_idx % self.eval_freq == 0 and batch_idx > 0:
+                        step = epoch * len(self.train_dl) + batch_idx
+
+                        if self.eval_fn:
+                            train_logger.info(
+                                f"Starting mid-epoch evaluation at batch {batch_idx}"
+                            )
+                            out = self.eval_fn(model, self.test_dl, self.train_fn)
+                            train_logger.info("Mid-epoch evaluation complete")
+                            logger.log_info(ValidationInfo(epoch, batch_idx, out))
+
+                            val_metrics = {}
+                            for test_info in out:
+                                val_metrics[f"val_{test_info.loss_type}"] = (
+                                    test_info.loss
+                                )
+                            wandb.log(val_metrics, step=step)
+
                         logger.checkpoint(epoch, batch_idx, model)
 
-                        # Log validation metrics to wandb
-                        val_metrics = {}
-                        for test_info in out:
-                            val_metrics[f"val_{test_info.loss_type}"] = test_info.loss
-                        wandb.log(
-                            val_metrics, step=epoch * len(self.train_dl) + batch_idx
-                        )
+                        if self.agent_eval_fn is not None:
+                            train_logger.info(
+                                f"Starting mid-epoch agent evaluation at batch {batch_idx}"
+                            )
+                            model_unwrapped = (
+                                model.module if hasattr(model, "module") else model
+                            )
+                            agent_results = self.agent_eval_fn(model_unwrapped, epoch)
+                            train_logger.info("Mid-epoch agent evaluation complete")
+                            _log_agent_results(agent_results, logger, step)
 
                 # Synchronize processes if distributed
                 if is_distributed and batch_idx % self.eval_freq == 0:
@@ -236,30 +320,16 @@ class PreTrainContext:
                 train_logger.info("Checkpoint saved")
 
                 # Agent evaluation at end of epoch
-                train_logger.info("Starting agent evaluation")
-                # Unwrap DistributedDataParallel before passing to agent eval
-                model_unwrapped = model.module if hasattr(model, "module") else model
-                agent_results = self.agent_eval_fn(model_unwrapped, epoch)
-                train_logger.info("Agent evaluation complete")
-
-                # Separate regular metrics from HTML content
-                regular_metrics = {}
-                html_content = {}
-
-                for key, value in agent_results.items():
-                    if key.startswith("eval/PGN"):
-                        html_content[key] = value
-                    else:
-                        regular_metrics[key] = value
-                        logger.log_info(TestInfo(key, value))
-
-                # Log to wandb (using same step as validation)
-                if regular_metrics:
-                    wandb.log(
-                        regular_metrics, step=epoch * len(self.train_dl) + batch_idx
+                if self.agent_eval_fn is not None:
+                    train_logger.info("Starting agent evaluation")
+                    model_unwrapped = (
+                        model.module if hasattr(model, "module") else model
                     )
-                if html_content:
-                    wandb.log(html_content, step=epoch * len(self.train_dl) + batch_idx)
+                    agent_results = self.agent_eval_fn(model_unwrapped, epoch)
+                    train_logger.info("Agent evaluation complete")
+                    _log_agent_results(
+                        agent_results, logger, epoch * len(self.train_dl) + batch_idx
+                    )
 
             if is_distributed:
                 dist.barrier()

@@ -1,0 +1,35 @@
+pretrain_context: !PreTrainContext()
+    epochs: 1
+    eval_freq: 1000
+    gradient_clip: 1.0
+    use_amp: true
+    amp_dtype: float16
+    warmup_steps: 1000
+    lr_min: !!float 1e-5
+
+    train_fn: !train_step
+    eval_fn: null
+    test_dl: null
+
+    agent_eval_fn: !parallel_training_agent_eval()
+        games_vs_random: 100
+        games_vs_stockfish: 100
+        stockfish_depths: [1, 2, 3]
+        temperature: 1.0
+        sample: true
+
+    train_dl: !BinaryChessDataLoader()
+        data_path: /mnt/output/data/elite.bin
+        batch_size: 2048
+        board_format: lczero
+        move_format: cmove
+        num_workers: 1
+
+model: !ChessConvNet()
+    input_channels: 20
+    num_filters: 128
+    num_blocks: 8
+    output_dim: 5700
+
+opt: !Adam()
+    lr: !!float 5e-4

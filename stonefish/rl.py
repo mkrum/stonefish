@@ -231,12 +231,14 @@ class RLContext:
                 param.grad.data /= world_size
 
     def __call__(self, logger, model, opt, env, rank, world_size):
+        distributed = world_size > 1
 
         if rank == 0:
             out = self.eval_fn(model, 0)
             logger.log_info(out)
 
-        dist.barrier()
+        if distributed:
+            dist.barrier()
 
         state, legal_mask = env.reset()
 
@@ -266,7 +268,8 @@ class RLContext:
                     logger.log_info(out)
                     logger.checkpoint(it, 0, model)
 
-                dist.barrier()
+                if distributed:
+                    dist.barrier()
 
 
 def polyak_update(polyak_factor, target_network, network):
@@ -305,6 +308,7 @@ class TwoModelRLContext(RLContext):
         return history, state, legal_mask, player_id
 
     def __call__(self, logger, model, opt, env, rank, world_size):
+        distributed = world_size > 1
 
         twin_model = copy.deepcopy(model)
 
@@ -312,7 +316,8 @@ class TwoModelRLContext(RLContext):
             out = self.eval_fn(model, 0)
             logger.log_info(out)
 
-        dist.barrier()
+        if distributed:
+            dist.barrier()
 
         state, legal_mask = env.reset()
 
@@ -356,30 +361,45 @@ class TwoModelRLContext(RLContext):
                     logger.log_info(out)
                     logger.checkpoint(it, 0, model)
 
-                dist.barrier()
+                if distributed:
+                    dist.barrier()
 
 
-def run(rank, world_size, config, log_path):
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12347"
+def _select_device(rank):
+    """Pick the best available device for the given rank."""
+    if torch.cuda.is_available():
+        return torch.device(f"cuda:{rank}")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
-    # initialize the process group
-    dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
-    device = torch.device(f"cuda:{rank}" if torch.cuda.is_available() else "cpu")
+def run(rank, world_size, config, log_path, checkpoint=None):
+    distributed = world_size > 1
 
-    model = config["model"](device).to(device)
+    if distributed:
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12347"
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
-    for param in model.parameters():
-        dist.all_reduce(param.data, op=dist.reduce_op.SUM)
-        param.data /= world_size
+    device = _select_device(rank)
 
-    opt = optim.Adam(
-        [
-            {"params": model.policy.parameters(), "lr": 1e-4},
-            {"params": model.V.parameters(), "lr": 1e-3},
-        ],
-    )
+    model = config["model"]()
+    model = model.to(device)
+
+    if checkpoint is not None:
+        state_dict = torch.load(checkpoint, map_location=device, weights_only=True)
+        cleaned = {}
+        for k, v in state_dict.items():
+            cleaned[k[7:] if k.startswith("module.") else k] = v
+        model.load_state_dict(cleaned, strict=False)
+
+    if distributed:
+        for param in model.parameters():
+            dist.all_reduce(param.data, op=dist.reduce_op.SUM)
+            param.data /= world_size
+
+    opt = optim.Adam(model.parameters(), lr=1e-4)
 
     env = config["env"]()
     ctx = config["rl_context"]()
@@ -389,7 +409,8 @@ def run(rank, world_size, config, log_path):
 
     ctx(logger, model, opt, env, rank, world_size)
 
-    dist.destroy_process_group()
+    if distributed:
+        dist.destroy_process_group()
 
 
 @dataclass
@@ -511,6 +532,7 @@ if __name__ == "__main__":
     config, parser = load_config_and_create_parser()
     parser.add_argument("log_path")
     parser.add_argument("--np", type=int, default=1)
+    parser.add_argument("--checkpoint", type=str, default=None)
     args = parser.parse_args()
 
     config = parse_args_into_config(config, args)
@@ -526,7 +548,10 @@ if __name__ == "__main__":
     world_size = args.np
     if world_size > 1:
         mp.spawn(
-            run, args=(world_size, config, args.log_path), nprocs=world_size, join=True
+            run,
+            args=(world_size, config, args.log_path, args.checkpoint),
+            nprocs=world_size,
+            join=True,
         )
     else:
-        run(0, 1, config, args.log_path)
+        run(0, 1, config, args.log_path, checkpoint=args.checkpoint)
